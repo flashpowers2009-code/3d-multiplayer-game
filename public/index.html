@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>3D Third-Person</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#9ad0ec;touch-action:none;user-select:none;-webkit-user-select:none;font-family:system-ui,sans-serif}
+canvas{display:block;width:100%;height:100%}
+#joy{position:fixed;left:24px;bottom:calc(28px + env(safe-area-inset-bottom,0px));width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.2);border:2px solid rgba(255,255,255,.5);display:none;touch-action:none}
+#knob{position:absolute;left:35px;top:35px;width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.65)}
+#jump{position:fixed;right:28px;bottom:calc(40px + env(safe-area-inset-bottom,0px));width:76px;height:76px;border-radius:50%;background:rgba(255,255,255,.3);border:2px solid rgba(255,255,255,.6);color:#fff;font-weight:600;display:none;align-items:center;justify-content:center;touch-action:none}
+#hint{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:0;right:0;text-align:center;color:#fff;font-size:13px;text-shadow:0 1px 3px rgba(0,0,0,.5);pointer-events:none}
+</style>
+</head>
+<body>
+<div id="hint">WASD / arrows to move · Space to jump · drag to look · scroll to zoom</div>
+<div id="count" style="position:fixed;top:calc(34px + env(safe-area-inset-top,0px));left:0;right:0;text-align:center;color:#fff;font-size:12px;text-shadow:0 1px 3px rgba(0,0,0,.5);pointer-events:none">1 player online</div>
+<div id="joy"><div id="knob"></div></div>
+<div id="jump">Jump</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(function(){
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled=true;
+document.body.appendChild(renderer.domElement);
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x9ad0ec);
+scene.fog=new THREE.Fog(0x9ad0ec,40,140);
+const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,300);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x5a7a4a,0.7));
+const sun=new THREE.DirectionalLight(0xffffff,0.8);
+sun.position.set(30,50,20);
+sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);
+const sc=sun.shadow.camera;sc.left=-40;sc.right=40;sc.top=40;sc.bottom=-40;sc.far=150;
+scene.add(sun);scene.add(sun.target);
+
+// Ground
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshLambertMaterial({color:0x6aa84f}));
+ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
+const grid=new THREE.GridHelper(200,100,0x4f8a3c,0x5b9a46);grid.position.y=0.01;scene.add(grid);
+
+// Scenery (seeded so it's stable)
+let seed=7;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+const obstacles=[];
+const trunkM=new THREE.MeshLambertMaterial({color:0x7b5230});
+const leafM=new THREE.MeshLambertMaterial({color:0x2f7d32});
+const rockM=new THREE.MeshLambertMaterial({color:0x8d8d8d});
+for(let i=0;i<70;i++){
+  const x=(rnd()-.5)*180,z=(rnd()-.5)*180;
+  if(Math.hypot(x,z)<8)continue;
+  if(rnd()<0.7){
+    const s=0.8+rnd()*0.8,g=new THREE.Group();
+    const t=new THREE.Mesh(new THREE.CylinderGeometry(.3*s,.4*s,2*s,8),trunkM);t.position.y=s;t.castShadow=true;
+    const l=new THREE.Mesh(new THREE.ConeGeometry(1.6*s,4*s,8),leafM);l.position.y=4*s;l.castShadow=true;
+    g.add(t,l);g.position.set(x,0,z);scene.add(g);obstacles.push({x,z,r:.5*s+.4});
+  }else{
+    const s=0.7+rnd()*1.3;
+    const r=new THREE.Mesh(new THREE.DodecahedronGeometry(s),rockM);
+    r.position.set(x,s*.5,z);r.rotation.set(rnd()*3,rnd()*3,rnd()*3);r.castShadow=true;r.receiveShadow=true;scene.add(r);
+    obstacles.push({x,z,r:s*.9});
+  }
+}
+
+// Characters
+const mat=c=>new THREE.MeshLambertMaterial({color:c});
+function box(w,h,d,c,x,y,z){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat(c));m.position.set(x,y,z);m.castShadow=true;return m}
+function limb(x,y,c){const p=new THREE.Group();p.position.set(x,y,0);p.add(box(.24,.8,.26,c,0,-.4,0));return p}
+function makeChar(shirt){
+  const g=new THREE.Group();
+  const armL=limb(-.5,1.65,shirt),armR=limb(.5,1.65,shirt),legL=limb(-.18,.8,0x1f2937),legR=limb(.18,.8,0x1f2937);
+  g.add(box(.7,.9,.4,shirt,0,1.25,0),box(.5,.5,.5,0xf2c9a0,0,1.95,0),
+        box(.08,.08,.02,0x222222,-.12,2.0,.26),box(.08,.08,.02,0x222222,.12,2.0,.26),armL,armR,legL,legR);
+  g.userData={armL,armR,legL,legR};
+  return g;
+}
+function animChar(g,walkT,moving,air){
+  const u=g.userData,sw=Math.sin(walkT)*(moving&&!air?0.8:0);
+  u.legL.rotation.x=sw;u.legR.rotation.x=-sw;u.armL.rotation.x=-sw;u.armR.rotation.x=sw;
+  if(air){u.armL.rotation.x=u.armR.rotation.x=-2.4;u.legL.rotation.x=.3;u.legR.rotation.x=-.3}
+}
+const myHue=Math.random();
+const player=makeChar(new THREE.Color().setHSL(myHue,0.75,0.5).getHex());
+scene.add(player);
+
+// State
+const keys={};
+addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='Space')e.preventDefault()});
+addEventListener('keyup',e=>keys[e.code]=false);
+let yaw=0,pitch=0.35,dist=7;
+const joyV={x:0,y:0};let jumpQueued=false;
+const vel=new THREE.Vector3();let onGround=true,faceAngle=0,walkT=0;
+
+// Camera look (mouse drag / touch drag on canvas)
+const looks=new Map();
+const cv=renderer.domElement;
+cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);looks.set(e.pointerId,{x:e.clientX,y:e.clientY})});
+cv.addEventListener('pointermove',e=>{
+  const p=looks.get(e.pointerId);if(!p)return;
+  yaw-=(e.clientX-p.x)*0.006;
+  pitch=Math.max(-0.1,Math.min(1.3,pitch+(e.clientY-p.y)*0.005));
+  p.x=e.clientX;p.y=e.clientY;
+});
+const endLook=e=>looks.delete(e.pointerId);
+cv.addEventListener('pointerup',endLook);cv.addEventListener('pointercancel',endLook);
+cv.addEventListener('wheel',e=>{dist=Math.max(3,Math.min(16,dist+e.deltaY*0.01));e.preventDefault()},{passive:false});
+
+// Touch controls
+const joy=document.getElementById('joy'),knob=document.getElementById('knob'),jumpB=document.getElementById('jump');
+if('ontouchstart' in window||navigator.maxTouchPoints>0){
+  joy.style.display='block';jumpB.style.display='flex';
+  document.getElementById('hint').textContent='Left stick to move · drag to look · Jump button';
+  let jid=null;
+  const upd=e=>{
+    const r=joy.getBoundingClientRect();
+    let dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2);
+    const m=Math.hypot(dx,dy),max=45;if(m>max){dx*=max/m;dy*=max/m}
+    knob.style.transform=`translate(${dx}px,${dy}px)`;
+    joyV.x=dx/max;joyV.y=-dy/max;
+  };
+  joy.addEventListener('pointerdown',e=>{jid=e.pointerId;joy.setPointerCapture(jid);upd(e)});
+  joy.addEventListener('pointermove',e=>{if(e.pointerId===jid)upd(e)});
+  const rel=e=>{if(e.pointerId!==jid)return;jid=null;joyV.x=joyV.y=0;knob.style.transform=''};
+  joy.addEventListener('pointerup',rel);joy.addEventListener('pointercancel',rel);
+  jumpB.addEventListener('pointerdown',()=>jumpQueued=true);
+}
+
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+
+// Multiplayer (Socket.io, served by the same Node server)
+const remotes=new Map();let socket=null,sendAcc=0;const countEl=document.getElementById('count');
+function updateCount(){countEl.textContent=(remotes.size+1)+' player'+(remotes.size?'s':'')+' online'}
+function sendPresence(dt){
+  if(!socket||!socket.connected)return;
+  sendAcc+=dt;if(sendAcc<0.066)return;sendAcc=0;
+  const p=player.position;
+  socket.volatile.emit('playerMovement',{x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),r:+player.rotation.y.toFixed(2),h:+myHue.toFixed(3)});
+}
+function setRemote(id,d){
+  if(!d||typeof d.x!=='number'||typeof d.z!=='number')return;
+  let r=remotes.get(id);
+  if(!r){
+    const g=makeChar(new THREE.Color().setHSL(typeof d.h==='number'?d.h:0.1,0.75,0.5).getHex());
+    g.position.set(d.x,d.y||0,d.z);scene.add(g);
+    r={g,t:null,walk:0};remotes.set(id,r);updateCount();
+  }
+  r.t={x:d.x,y:d.y||0,z:d.z,r:d.r||0};
+}
+function updateRemotes(dt){
+  for(const r of remotes.values()){
+    const k=Math.min(1,dt*10),g=r.g,t=r.t;if(!t)continue;
+    const ox=g.position.x,oz=g.position.z;
+    g.position.x+=(t.x-g.position.x)*k;g.position.y+=(t.y-g.position.y)*k;g.position.z+=(t.z-g.position.z)*k;
+    g.rotation.y+=angDiff(g.rotation.y,t.r)*k;
+    const sp=Math.hypot(g.position.x-ox,g.position.z-oz)/Math.max(dt,0.001);
+    if(sp>0.5)r.walk+=dt*10;
+    animChar(g,r.walk,sp>0.5,g.position.y>0.15);
+  }
+}
+if(typeof io!=='undefined'){
+  socket=io();
+  socket.on('currentPlayers',list=>{for(const id in list)if(id!==socket.id)setRemote(id,list[id])});
+  socket.on('serverUpdate',(id,d)=>setRemote(id,d));
+  socket.on('playerLeft',id=>{const r=remotes.get(id);if(r){scene.remove(r.g);remotes.delete(id);updateCount()}});
+  socket.on('disconnect',()=>{for(const r of remotes.values())scene.remove(r.g);remotes.clear();updateCount()});
+}
+
+const SPEED=6,GRAV=-26,JUMP=9;
+const clock=new THREE.Clock();
+function angDiff(a,b){let d=b-a;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+=2*Math.PI;return d}
+
+function tick(){
+  const dt=Math.min(clock.getDelta(),0.05);
+  // input
+  let ix=joyV.x,iz=joyV.y;
+  if(keys.KeyW||keys.ArrowUp)iz+=1;
+  if(keys.KeyS||keys.ArrowDown)iz-=1;
+  if(keys.KeyD||keys.ArrowRight)ix+=1;
+  if(keys.KeyA||keys.ArrowLeft)ix-=1;
+  const il=Math.hypot(ix,iz);if(il>1){ix/=il;iz/=il}
+  const fx=-Math.sin(yaw),fz=-Math.cos(yaw),rx=Math.cos(yaw),rz=-Math.sin(yaw);
+  const mx=fx*iz+rx*ix,mz=fz*iz+rz*ix;
+  const moving=Math.hypot(mx,mz)>0.05;
+
+  player.position.x+=mx*SPEED*dt;
+  player.position.z+=mz*SPEED*dt;
+  if(moving){
+    const target=Math.atan2(mx,mz);
+    faceAngle+=angDiff(faceAngle,target)*Math.min(1,dt*12);
+    player.rotation.y=faceAngle;
+  }
+  // jump & gravity
+  if((keys.Space||jumpQueued)&&onGround){vel.y=JUMP;onGround=false}
+  jumpQueued=false;
+  vel.y+=GRAV*dt;player.position.y+=vel.y*dt;
+  if(player.position.y<=0){player.position.y=0;vel.y=0;onGround=true}
+  // collisions & bounds
+  for(const o of obstacles){
+    const dx=player.position.x-o.x,dz=player.position.z-o.z,d=Math.hypot(dx,dz),m=o.r+.35;
+    if(d<m&&d>0.001&&player.position.y<1.2){player.position.x=o.x+dx/d*m;player.position.z=o.z+dz/d*m}
+  }
+  player.position.x=Math.max(-97,Math.min(97,player.position.x));
+  player.position.z=Math.max(-97,Math.min(97,player.position.z));
+  // walk animation
+  if(moving&&onGround)walkT+=dt*10;
+  animChar(player,walkT,moving,!onGround);
+  sendPresence(dt,moving);
+  updateRemotes(dt);
+  // camera
+  const tx=player.position.x,ty=player.position.y+1.6,tz=player.position.z;
+  const cp=Math.cos(pitch);
+  const want=new THREE.Vector3(tx+Math.sin(yaw)*cp*dist,ty+Math.sin(pitch)*dist,tz+Math.cos(yaw)*cp*dist);
+  want.y=Math.max(0.5,want.y);
+  camera.position.lerp(want,Math.min(1,dt*12));
+  camera.lookAt(tx,ty,tz);
+  // sun follows
+  sun.position.set(tx+30,50,tz+20);sun.target.position.set(tx,0,tz);
+  renderer.render(scene,camera);
+  requestAnimationFrame(tick);
+}
+camera.position.set(0,4,7);
+tick();
+})();
+</script>
+</body>
+</html>
