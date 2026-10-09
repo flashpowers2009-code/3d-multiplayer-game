@@ -19,21 +19,33 @@ canvas{display:block;width:100%;height:100%}
 .sw.on{border-color:#fff}
 #custom{display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;margin-bottom:16px}
 #custom input{width:44px;height:30px;border:none;background:none;padding:0;cursor:pointer}
-#play{width:100%;padding:12px;border:none;border-radius:10px;background:#22c55e;color:#fff;font-size:16px;font-weight:600;cursor:pointer}
+#go,#play{width:100%;padding:12px;border:none;border-radius:10px;background:#22c55e;color:#fff;font-size:16px;font-weight:600;cursor:pointer}
 #xh{position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.5);display:none;pointer-events:none}
-#nm{width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:14px;border-radius:10px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;font-size:16px;text-align:center;outline:none}
-#nm::placeholder{color:rgba(255,255,255,.55)}
+#un,#pw{width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:14px;border-radius:10px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;font-size:16px;text-align:center;outline:none}
+#un::placeholder,#pw::placeholder{color:rgba(255,255,255,.55)}
+#err{min-height:18px;margin:-6px 0 8px;font-size:13px;color:#fca5a5}
+#swap{margin-top:12px;font-size:13px;opacity:.85}#swap a{color:#93c5fd}
 </style>
 </head>
 <body>
 <div id="hint">Click the screen to capture mouse · WASD / arrows to move · Space to jump · Esc to release</div>
 <div id="count" style="position:fixed;top:calc(34px + env(safe-area-inset-top,0px));left:0;right:0;text-align:center;color:#fff;font-size:12px;text-shadow:0 1px 3px rgba(0,0,0,.5);pointer-events:none">1 player online</div>
 <div id="menu"><div id="panel">
-<h1>Create your player</h1><p>Pick a name and shirt color, then enter the game.</p>
-<input id="nm" maxlength="16" placeholder="Display name" autocomplete="off" spellcheck="false">
+<div id="authView" style="display:none">
+<h1 id="authTitle">Log in to play</h1><p>Your name and shirt color are saved to your account.</p>
+<input id="un" maxlength="16" placeholder="Username" autocomplete="username" autocapitalize="off" spellcheck="false">
+<input id="pw" type="password" maxlength="72" placeholder="Password (8+ characters)" autocomplete="current-password">
+<div id="err"></div>
+<button id="go">Log in</button>
+<div id="swap"><span id="swapT">New here?</span> <a href="#" id="swapA">Create an account</a></div>
+</div>
+<div id="setupView" style="display:none">
+<h1 id="hello">Welcome</h1><p>Pick your shirt color, then enter the game.</p>
 <div id="sw"></div>
 <label id="custom">Custom: <input type="color" id="cc" value="#3b82f6"></label>
 <button id="play">Enter game</button>
+<div id="swap"><a href="#" id="logout">Log out</a></div>
+</div>
 </div></div>
 <div id="xh"></div>
 <div id="joy"><div id="knob"></div></div>
@@ -220,31 +232,87 @@ function updateRemotes(dt){
     animChar(g,r.walk,sp>0.5,g.position.y>0.15);
   }
 }
-function connect(){
+function connect(token){
   if(typeof io==='undefined')return;
-  socket=io();
+  socket=io({auth:{token}});
+  socket.on('kicked',()=>{alert('You signed in from somewhere else.');location.reload()});
+  socket.on('connect_error',e=>{if(e&&e.message==='auth'){try{localStorage.removeItem('fpsToken')}catch(_){}location.reload()}});
   socket.on('currentPlayers',list=>{for(const id in list)if(id!==socket.id)setRemote(id,list[id])});
   socket.on('serverUpdate',(id,d)=>setRemote(id,d));
   socket.on('playerLeft',id=>{const r=remotes.get(id);if(r){scene.remove(r.g);remotes.delete(id);updateCount()}});
   socket.on('disconnect',()=>{for(const r of remotes.values())scene.remove(r.g);remotes.clear();updateCount()});
 }
 
-// Start menu
+// Accounts + start menu
 (function(){
-  const box_=document.getElementById('sw'),cc=document.getElementById('cc');
+  const $=id=>document.getElementById(id);
+  let token=null,mode='login';
+  try{token=localStorage.getItem('fpsToken')}catch(_){}
+  const sw=$('sw'),cc=$('cc');
+  const hexOf=n=>'#'+n.toString(16).padStart(6,'0');
   const setColor=hex=>{
     myColor=parseInt(hex.slice(1),16);player.userData.sm.color.setHex(myColor);cc.value=hex;
-    box_.querySelectorAll('.sw').forEach(b=>b.classList.toggle('on',b.dataset.c.toLowerCase()===hex.toLowerCase()));
+    sw.querySelectorAll('.sw').forEach(b=>b.classList.toggle('on',b.dataset.c.toLowerCase()===hex.toLowerCase()));
   };
-  SWATCHES.forEach(c=>{const b=document.createElement('button');b.className='sw';b.dataset.c=c;b.style.background=c;b.setAttribute('aria-label','Shirt color '+c);b.onclick=()=>setColor(c);box_.appendChild(b)});
+  SWATCHES.forEach(c=>{const b=document.createElement('button');b.className='sw';b.dataset.c=c;b.style.background=c;b.setAttribute('aria-label','Shirt color '+c);b.onclick=()=>setColor(c);sw.appendChild(b)});
   cc.addEventListener('input',()=>setColor(cc.value));
-  try{const n=localStorage.getItem('fpsName');if(n)document.getElementById('nm').value=n}catch(_){}
-  setColor('#'+myColor.toString(16).padStart(6,'0'));
-  document.getElementById('play').addEventListener('click',e=>{
-    myName=(document.getElementById('nm').value||'').trim().slice(0,16)||'Player';try{localStorage.setItem('fpsName',myName)}catch(_){}
-    started=true;document.getElementById('menu').style.display='none';pitch=0;camera.fov=75;camera.updateProjectionMatrix();player.visible=false;document.getElementById('xh').style.display='block';connect();
-    if(e.pointerType==='mouse'&&cv.requestPointerLock){try{const r=cv.requestPointerLock();if(r&&r.catch)r.catch(()=>{})}catch(_){}}
+  setColor(hexOf(myColor));
+
+  async function api(path,body,method){
+    const r=await fetch(path,{method:method||'POST',headers:Object.assign({'Content-Type':'application/json'},token?{Authorization:'Bearer '+token}:{}),body:body?JSON.stringify(body):undefined});
+    let j={};try{j=await r.json()}catch(_){}
+    if(!r.ok){const e=new Error(j.error||'Something went wrong.');e.status=r.status;throw e}
+    return j;
+  }
+  function showAuth(){$('authView').style.display='block';$('setupView').style.display='none'}
+  function showSetup(u){
+    myName=u.username;
+    if(typeof u.color==='number')setColor(hexOf(u.color));
+    $('hello').textContent='Welcome, '+u.username;
+    $('authView').style.display='none';$('setupView').style.display='block';
+  }
+  function renderMode(){
+    const reg=mode==='register';
+    $('authTitle').textContent=reg?'Create your account':'Log in to play';
+    $('go').textContent=reg?'Create account':'Log in';
+    $('swapT').textContent=reg?'Already have an account?':'New here?';
+    $('swapA').textContent=reg?'Log in':'Create an account';
+    $('pw').autocomplete=reg?'new-password':'current-password';
+    $('err').textContent='';
+  }
+  $('swapA').onclick=e=>{e.preventDefault();mode=mode==='login'?'register':'login';renderMode()};
+  async function submit(){
+    $('err').textContent='';$('go').disabled=true;
+    try{
+      const j=await api('/api/'+mode,{username:$('un').value.trim(),password:$('pw').value,color:myColor});
+      token=j.token;try{localStorage.setItem('fpsToken',token)}catch(_){}
+      $('pw').value='';showSetup(j);
+    }catch(e){$('err').textContent=e.message}
+    $('go').disabled=false;
+  }
+  $('go').onclick=submit;
+  $('pw').addEventListener('keydown',e=>{if(e.key==='Enter')submit()});
+  $('un').addEventListener('keydown',e=>{if(e.key==='Enter')$('pw').focus()});
+  $('logout').onclick=e=>{e.preventDefault();try{localStorage.removeItem('fpsToken')}catch(_){}location.reload()};
+
+  $('play').addEventListener('click',async e=>{
+    const mouse=e.pointerType==='mouse'&&cv.requestPointerLock;
+    if(mouse){try{const r=cv.requestPointerLock();if(r&&r.catch)r.catch(()=>{})}catch(_){}}
+    $('play').disabled=true;
+    try{await api('/api/color',{color:myColor})}
+    catch(err){
+      if(err.status===401){try{localStorage.removeItem('fpsToken')}catch(_){}location.reload();return}
+      $('play').disabled=false;return;
+    }
+    started=true;document.getElementById('menu').style.display='none';
+    pitch=0;camera.fov=75;camera.updateProjectionMatrix();player.visible=false;
+    document.getElementById('xh').style.display='block';
+    connect(token);
   });
+
+  renderMode();
+  if(token){api('/api/me',null,'GET').then(showSetup).catch(()=>{token=null;try{localStorage.removeItem('fpsToken')}catch(_){}showAuth()})}
+  else showAuth();
 })();
 
 const SPEED=6,GRAV=-26,JUMP=9;
