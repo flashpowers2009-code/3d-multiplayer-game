@@ -14,7 +14,7 @@ canvas{display:block;width:100%;height:100%}
 </style>
 </head>
 <body>
-<div id="hint">WASD / arrows to move · Space to jump · drag to look · scroll to zoom</div>
+<div id="hint">Click the screen to capture mouse · WASD / arrows to move · Space to jump · Esc to release · scroll to zoom</div>
 <div id="count" style="position:fixed;top:calc(34px + env(safe-area-inset-top,0px));left:0;right:0;text-align:center;color:#fff;font-size:12px;text-shadow:0 1px 3px rgba(0,0,0,.5);pointer-events:none">1 player online</div>
 <div id="joy"><div id="knob"></div></div>
 <div id="jump">Jump</div>
@@ -100,8 +100,21 @@ const vel=new THREE.Vector3();let onGround=true,faceAngle=0,walkT=0;
 // Camera look (mouse drag / touch drag on canvas)
 const looks=new Map();
 const cv=renderer.domElement;
-cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);looks.set(e.pointerId,{x:e.clientX,y:e.clientY})});
+const hintEl=document.getElementById('hint');
+const MOUSE_HINT='Click the screen to capture mouse · WASD / arrows to move · Space to jump · Esc to release · scroll to zoom';
+const LOCKED_HINT='WASD / arrows to move · Space to jump · Esc to release mouse · scroll to zoom';
+const locked=()=>document.pointerLockElement===cv;
+document.addEventListener('pointerlockchange',()=>{hintEl.textContent=locked()?LOCKED_HINT:MOUSE_HINT});
+function look(dx,dy){yaw-=dx*0.0025;pitch=Math.max(-0.1,Math.min(1.3,pitch+dy*0.0025))}
+cv.addEventListener('pointerdown',e=>{
+  if(e.pointerType==='mouse'&&cv.requestPointerLock){
+    if(!locked()){try{const r=cv.requestPointerLock();if(r&&r.catch)r.catch(()=>{})}catch(_){}}
+    return;
+  }
+  cv.setPointerCapture(e.pointerId);looks.set(e.pointerId,{x:e.clientX,y:e.clientY});
+});
 cv.addEventListener('pointermove',e=>{
+  if(locked()){look(e.movementX,e.movementY);return}
   const p=looks.get(e.pointerId);if(!p)return;
   yaw-=(e.clientX-p.x)*0.006;
   pitch=Math.max(-0.1,Math.min(1.3,pitch+(e.clientY-p.y)*0.005));
