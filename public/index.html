@@ -21,13 +21,16 @@ canvas{display:block;width:100%;height:100%}
 #custom input{width:44px;height:30px;border:none;background:none;padding:0;cursor:pointer}
 #play{width:100%;padding:12px;border:none;border-radius:10px;background:#22c55e;color:#fff;font-size:16px;font-weight:600;cursor:pointer}
 #xh{position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.5);display:none;pointer-events:none}
+#nm{width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:14px;border-radius:10px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;font-size:16px;text-align:center;outline:none}
+#nm::placeholder{color:rgba(255,255,255,.55)}
 </style>
 </head>
 <body>
 <div id="hint">Click the screen to capture mouse · WASD / arrows to move · Space to jump · Esc to release</div>
 <div id="count" style="position:fixed;top:calc(34px + env(safe-area-inset-top,0px));left:0;right:0;text-align:center;color:#fff;font-size:12px;text-shadow:0 1px 3px rgba(0,0,0,.5);pointer-events:none">1 player online</div>
 <div id="menu"><div id="panel">
-<h1>Choose your shirt color</h1><p>Pick a color, then enter the game.</p>
+<h1>Create your player</h1><p>Pick a name and shirt color, then enter the game.</p>
+<input id="nm" maxlength="16" placeholder="Display name" autocomplete="off" spellcheck="false">
 <div id="sw"></div>
 <label id="custom">Custom: <input type="color" id="cc" value="#3b82f6"></label>
 <button id="play">Enter game</button>
@@ -108,6 +111,7 @@ function animChar(g,walkT,moving,air){
 const SWATCHES=['#3b82f6','#ef4444','#22c55e','#eab308','#a855f7','#f97316','#ec4899','#14b8a6','#f8fafc','#111827'];
 let myColor=parseInt(SWATCHES[Math.floor(Math.random()*SWATCHES.length)].slice(1),16);
 const player=makeChar(myColor);
+let myName='Player';
 scene.add(player);
 
 // State
@@ -179,7 +183,20 @@ function sendPresence(dt){
   if(!socket||!socket.connected)return;
   sendAcc+=dt;if(sendAcc<0.066)return;sendAcc=0;
   const p=player.position;
-  socket.volatile.emit('playerMovement',{x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),r:+player.rotation.y.toFixed(2),c:myColor});
+  socket.volatile.emit('playerMovement',{x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),r:+player.rotation.y.toFixed(2),c:myColor,n:myName});
+}
+function makeTag(name){
+  const c=document.createElement('canvas');c.width=256;c.height=64;const x=c.getContext('2d');
+  x.font='bold 30px system-ui,sans-serif';x.textAlign='center';x.textBaseline='middle';
+  x.lineWidth=6;x.strokeStyle='rgba(0,0,0,.7)';x.strokeText(name,128,32,240);
+  x.fillStyle='#fff';x.fillText(name,128,32,240);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true,fog:false}));
+  sp.scale.set(2,.5,1);sp.position.y=2.7;return sp;
+}
+function setTag(r,name){
+  if(r.name===name)return;
+  if(r.tag){r.g.remove(r.tag);r.tag.material.map.dispose();r.tag.material.dispose()}
+  r.name=name;r.tag=makeTag(name);r.g.add(r.tag);
 }
 function setRemote(id,d){
   if(!d||typeof d.x!=='number'||typeof d.z!=='number')return;
@@ -190,6 +207,7 @@ function setRemote(id,d){
     r={g,t:null,walk:0};remotes.set(id,r);updateCount();
   }
   r.t={x:d.x,y:d.y||0,z:d.z,r:d.r||0};
+  setTag(r,typeof d.n==='string'&&d.n?d.n.slice(0,16):'Player');
 }
 function updateRemotes(dt){
   for(const r of remotes.values()){
@@ -220,8 +238,10 @@ function connect(){
   };
   SWATCHES.forEach(c=>{const b=document.createElement('button');b.className='sw';b.dataset.c=c;b.style.background=c;b.setAttribute('aria-label','Shirt color '+c);b.onclick=()=>setColor(c);box_.appendChild(b)});
   cc.addEventListener('input',()=>setColor(cc.value));
+  try{const n=localStorage.getItem('fpsName');if(n)document.getElementById('nm').value=n}catch(_){}
   setColor('#'+myColor.toString(16).padStart(6,'0'));
   document.getElementById('play').addEventListener('click',e=>{
+    myName=(document.getElementById('nm').value||'').trim().slice(0,16)||'Player';try{localStorage.setItem('fpsName',myName)}catch(_){}
     started=true;document.getElementById('menu').style.display='none';pitch=0;camera.fov=75;camera.updateProjectionMatrix();player.visible=false;document.getElementById('xh').style.display='block';connect();
     if(e.pointerType==='mouse'&&cv.requestPointerLock){try{const r=cv.requestPointerLock();if(r&&r.catch)r.catch(()=>{})}catch(_){}}
   });
