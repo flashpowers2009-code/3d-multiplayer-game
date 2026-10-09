@@ -8,7 +8,7 @@ const io = new Server(server);
 
 app.use(express.static(__dirname + '/public'));
 
-const players = {}; // socket.id -> { x, y, z, r, h }
+const players = {}; // socket.id -> { x, y, z, r, c }
 const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
 
 io.on('connection', (socket) => {
@@ -22,7 +22,7 @@ io.on('connection', (socket) => {
       y: Math.max(0, Math.min(50, num(d.y))),
       z: Math.max(-100, Math.min(100, num(d.z))),
       r: num(d.r),
-      h: Math.max(0, Math.min(1, num(d.h))),
+      c: Math.max(0, Math.min(0xffffff, Math.floor(num(d.c)))),
     };
     socket.broadcast.emit('serverUpdate', socket.id, players[socket.id]);
   });
