@@ -117,6 +117,8 @@ async function auth(req, res, next) {
   next();
 }
 
+app.get('/api/status', (req, res) => res.json({ persistent: !!process.env.DATABASE_URL, secretSet: !!process.env.SESSION_SECRET }));
+
 app.post('/api/register', limiter, wrap(async (req, res) => {
   const { username, password, color } = req.body || {};
   if (typeof username !== 'string' || !NAME_RE.test(username))
