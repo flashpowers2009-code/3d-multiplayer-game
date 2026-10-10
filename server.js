@@ -166,11 +166,11 @@ setInterval(() => {
   if (!online.size) { resetCore(); return; }
   const dt = 0.1;
   simT += dt;
-  if (Math.random() < 0.003) spike = 6 + Math.random() * 8; // occasional heat surge
+  if (Math.random() < 0.0006) spike = 5 + Math.random() * 5; // rare heat surge (about one every 3 minutes)
   spike *= 0.985;
-  const heat = -1 + 0.4 * Math.sin(simT / 17) + spike; // small negative base: the core cools slowly on its own
-  const cooling = core.cl.filter(Boolean).length * 3;
-  const heating = core.ht.filter(Boolean).length * 2.5;
+  const heat = -2 + 0.4 * Math.sin(simT / 17) + spike; // small negative base: the core cools slowly on its own
+  const cooling = core.cl.filter(Boolean).length * 4;
+  const heating = core.ht.filter(Boolean).length * 3.5;
   core.temp += (heat - cooling + heating - 0.004 * (core.temp - 300)) * dt;
   core.temp = Math.max(300, Math.min(1200, core.temp));
 }, 100);
