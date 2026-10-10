@@ -31,6 +31,18 @@ canvas{display:block;width:100%;height:100%}
 #cbox{padding:18px 20px;max-width:360px;width:100%;box-sizing:border-box}
 #fsbtn{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));left:calc(10px + env(safe-area-inset-left,0px));z-index:5;display:none;padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.5);background:rgba(15,23,42,.55);color:#fff;font-size:16px;cursor:pointer}
 #toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(56px + env(safe-area-inset-top,0px));z-index:30;display:none;max-width:85%;padding:8px 12px;border-radius:10px;background:rgba(15,23,42,.9);color:#fff;font-size:13px;text-align:center;pointer-events:none}
+#ctrlp{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;background:rgba(0,0,0,.4)}
+#ctrlbox{background:rgba(15,23,42,.92);border:1px solid rgba(255,255,255,.2);border-radius:16px;padding:18px 20px;color:#fff;text-align:center;max-width:360px;width:100%;box-sizing:border-box}
+#ctrlbox h1{font-size:18px;margin:0 0 8px}
+#ctemp{font-size:44px;font-weight:700;line-height:1.1}
+#cstat{font-size:15px;font-weight:700;letter-spacing:.08em;margin:2px 0 10px}
+#tbar{position:relative;height:14px;border-radius:7px;margin:0 0 16px;background:linear-gradient(to right,#3b82f6 0%,#22d3ee 17%,#22d3ee 50%,#fbbf24 60%,#f97316 67%,#ef4444 78%,#ef4444 100%)}
+#tmark{position:absolute;top:-4px;width:4px;height:22px;background:#fff;border-radius:2px;left:0;transform:translateX(-2px)}
+.rowlab{display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px}
+#crange{width:100%;margin:0 0 8px;height:34px}
+#cby{font-size:12px;opacity:.7;min-height:16px;margin-bottom:12px}
+#cclose{width:100%;padding:12px;border:none;border-radius:10px;background:#22c55e;color:#fff;font-size:16px;font-weight:600;cursor:pointer}
+#usebtn{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(170px + env(safe-area-inset-bottom,0px));z-index:6;display:none;padding:10px 16px;border-radius:999px;border:1px solid rgba(255,255,255,.6);background:rgba(15,23,42,.75);color:#fff;font-size:15px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -62,6 +74,16 @@ canvas{display:block;width:100%;height:100%}
 <div id="sw2"></div>
 <label id="custom2">Custom: <input type="color" id="cc2" value="#3b82f6"></label>
 <button id="cdone">Done</button>
+</div></div>
+<button id="usebtn"></button>
+<div id="ctrlp"><div id="ctrlbox">
+<h1>Core cooling control</h1>
+<div id="ctemp">--- °C</div><div id="cstat">NORMAL</div>
+<div id="tbar"><div id="tmark"></div></div>
+<div class="rowlab"><span>Cooling level</span><b id="cval">30%</b></div>
+<input type="range" id="crange" min="0" max="100" value="30">
+<div id="cby"></div>
+<button id="cclose">Close</button>
 </div></div>
 <div id="xh"></div>
 <div id="joy"><div id="knob"></div></div>
@@ -128,6 +150,39 @@ function fBox(w,h,d,color,x,y,z,collide){
   return m;
 }
 const basicM=(color,extra)=>new THREE.MeshBasicMaterial(Object.assign({color},extra||{}));
+const TERM={x:FX-4.6,z:FZ-4.6};
+const coreState={t:600,c:0.3,by:''};
+const facReadouts=[];
+function statusOf(T){
+  if(T<450)return{name:'COLD',col:'#3b82f6'};
+  if(T<750)return{name:'NORMAL',col:'#22d3ee'};
+  if(T<900)return{name:'WARNING',col:'#fbbf24'};
+  if(T<1000)return{name:'DANGER',col:'#f97316'};
+  return{name:'CRITICAL',col:'#ef4444'};
+}
+const CSTOPS=[[300,0x3b82f6],[500,0x22d3ee],[700,0x22d3ee],[800,0xfbbf24],[900,0xf97316],[1000,0xef4444]].map(([t,c])=>[t,new THREE.Color(c)]);
+function coreColor(T,out){
+  if(T<=CSTOPS[0][0])return out.copy(CSTOPS[0][1]);
+  for(let i=1;i<CSTOPS.length;i++){const [t1,c1]=CSTOPS[i],[t0,c0]=CSTOPS[i-1];if(T<=t1)return out.copy(c0).lerp(c1,(T-t0)/(t1-t0))}
+  return out.copy(CSTOPS[CSTOPS.length-1][1]);
+}
+function drawReadout(cv,compact){
+  const x=cv.getContext('2d'),w=cv.width,h=cv.height,T=coreState.t,st=statusOf(T);
+  const f=(sz,b)=>(b?'bold ':'')+Math.round(h*sz)+'px system-ui,sans-serif';
+  x.fillStyle='#050b14';x.fillRect(0,0,w,h);
+  x.strokeStyle=st.col;x.lineWidth=4;x.strokeRect(3,3,w-6,h-6);
+  x.textBaseline='top';x.textAlign='left';
+  x.fillStyle='#94a3b8';x.font=f(.09,true);x.fillText('CORE TEMPERATURE',w*.04,h*.07);
+  x.fillStyle=st.col;x.font=f(.34,true);x.fillText(T+' \u00b0C',w*.04,h*.18);
+  const bx=w*.04,by=h*.62,bw=w*.92,bh=h*.1,g=x.createLinearGradient(bx,0,bx+bw,0);
+  [[0,'#3b82f6'],[.17,'#22d3ee'],[.5,'#22d3ee'],[.6,'#fbbf24'],[.67,'#f97316'],[.78,'#ef4444'],[1,'#ef4444']].forEach(([o,c])=>g.addColorStop(o,c));
+  x.fillStyle=g;x.fillRect(bx,by,bw,bh);
+  x.fillStyle='#fff';x.fillRect(bx+bw*Math.max(0,Math.min(1,(T-300)/900))-3,by-6,6,bh+12);
+  x.fillStyle=st.col;x.font=f(.11,true);x.fillText(st.name,w*.04,h*.78);
+  x.fillStyle='#94a3b8';x.font=f(.075,false);x.textAlign='right';x.fillText('COOLING '+Math.round(coreState.c*100)+'%',w*.96,h*.8);
+  if(compact){x.textAlign='center';x.fillStyle='#64748b';x.fillText('Press E to adjust cooling',w/2,h*.92)}
+}
+function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compact);r.tex.needsUpdate=true}}
 (function(){
   const T=0.6,WC=0xb8bec7;
   const B=(w,h,d,c,lx,y,lz,col)=>fBox(w,h,d,c,FX+lx,y,FZ+lz,col);
@@ -269,14 +324,51 @@ const basicM=(color,extra)=>new THREE.MeshBasicMaterial(Object.assign({color},ex
   }
   const coreLight=new THREE.PointLight(0x22d3ee,1.3,26);coreLight.position.y=3;core.add(coreLight);
   obstacles.push({x:FX,z:FZ,r:1.6});
-  for(const [lx,lz] of [[-4.6,-4.6],[4.6,-4.6],[-4.6,4.6],[4.6,4.6]])consoleDesk(lx,lz,Math.atan2(-lx,-lz));
-  for(const z of [-7.2,-4.8,4.8,7.2]){rack(-8.9,z,1);rack(8.9,z,-1)}
-  for(const x of [-5,5])strip(x,0,.5,12,8.9);
+  const hallStripMat=basicM(0xf8fafc);
+  for(const x of [-5,5]){const m=new THREE.Mesh(new THREE.BoxGeometry(.5,.06,12),hallStripMat);m.position.set(FX+x,8.9,FZ);scene.add(m)}
   sign('CORE HALL',4,-6,6.6,-9.68,0,'#22d3ee');
+  // big temperature readout on the hall's north wall
+  const wallCv=cvs(640,240),wallTex=new THREE.CanvasTexture(wallCv);
+  const wallMesh=new THREE.Mesh(new THREE.PlaneGeometry(6.4,2.4),new THREE.MeshBasicMaterial({map:wallTex}));
+  wallMesh.position.set(FX+6,5.2,FZ-9.68);scene.add(wallMesh);
+  facReadouts.push({cv:wallCv,tex:wallTex,compact:false});
+
+  // the core control terminal
+  const termCv=cvs(512,320),termTex=new THREE.CanvasTexture(termCv);
+  facReadouts.push({cv:termCv,tex:termTex,compact:true});
+  const tg=new THREE.Group();tg.position.set(TERM.x,0,TERM.z);tg.rotation.y=Math.PI/4;scene.add(tg);
+  const dark=c=>new THREE.MeshLambertMaterial({color:c});
+  const desk=new THREE.Mesh(new THREE.BoxGeometry(3,.9,1),dark(0x374151));desk.position.y=.45;desk.castShadow=true;tg.add(desk);
+  const frame=new THREE.Mesh(new THREE.BoxGeometry(2.8,1.7,.12),dark(0x111827));frame.position.set(0,1.85,-.2);frame.rotation.x=-.2;tg.add(frame);
+  const scr=new THREE.Mesh(new THREE.PlaneGeometry(2.6,1.5),new THREE.MeshBasicMaterial({map:termTex}));
+  scr.position.set(0,1.86,-.13);scr.rotation.x=-.2;tg.add(scr);
+  const kb=new THREE.Mesh(new THREE.BoxGeometry(1.4,.04,.4),dark(0x0b1220));kb.position.set(0,.92,.2);tg.add(kb);
+  const lampMat=basicM(0x22d3ee);
+  const lamp=new THREE.Mesh(new THREE.BoxGeometry(.5,.14,.14),lampMat);lamp.position.set(0,2.88,-.25);tg.add(lamp);
+  facReadouts.lamp=lampMat;
+  obstacles.push({x:TERM.x,z:TERM.z,r:1.5});
+  drawAllReadouts();
+
+  // the core reacts to its temperature: color, spin speed, pulse rate, flashing alarm
+  const cTmp=new THREE.Color(),white=new THREE.Color(0xffffff);
+  const decals=core.children.filter(m=>m.geometry&&m.geometry.type==='RingGeometry');
+  let lastT=0,ph=0,dispT=coreState.t;
   facAnims.push(t=>{
-    rings.forEach((r,i)=>{r.rotation.x=t*(.6+i*.25);r.rotation.y=t*(.4+i*.2)});
-    cage.rotation.y=t*.5;cage.rotation.x=t*.3;orb.scale.setScalar(1+Math.sin(t*3)*.06);
-    coreLight.intensity=1.1+Math.sin(t*3)*.3;
+    const dt=Math.min(.1,Math.max(0,t-lastT));lastT=t;
+    dispT+=(coreState.t-dispT)*Math.min(1,dt*5);
+    const k=Math.max(0,Math.min(1,(dispT-300)/900));
+    coreColor(dispT,cTmp);
+    if(coreState.t>=1000&&Math.floor(t*5)%2===0)cTmp.lerp(white,.6);
+    orb.material.color.copy(cTmp);cage.material.color.copy(cTmp).lerp(white,.45);
+    rings.forEach(r=>r.material.color.copy(cTmp));up.material.color.copy(cTmp);dn.material.color.copy(cTmp);
+    decals.forEach(d=>d.material.color.copy(cTmp));coreLight.color.copy(cTmp);
+    ph+=dt*(1+k*3);
+    rings.forEach((r,i)=>{r.rotation.x=ph*(.6+i*.25);r.rotation.y=ph*(.4+i*.2)});
+    cage.rotation.y=ph*.5;cage.rotation.x=ph*.3;
+    const pulse=Math.sin(t*(3+k*9));
+    orb.scale.setScalar(1+pulse*(.06+.1*k));
+    coreLight.intensity=1+k+pulse*.3;
+    hallStripMat.color.set(coreState.t>=900&&Math.floor(t*2.5)%2===0?0xff3b3b:0xf8fafc);
   });
 
   // ---------- LOBBY (south) ----------
@@ -360,6 +452,7 @@ const basicM=(color,extra)=>new THREE.MeshBasicMaterial(Object.assign({color},ex
   facAnims.push(t=>{tip.visible=Math.floor(t*1.5)%2===0});
 })();
 function facilityTick(t){
+  nearCheck();
   for(const p of facPanels)p.m.material=facPanels.mats[Math.floor(t*2+p.i*0.37)%2];
   for(const s of facScreens)s.m.material=facScreens.mats[Math.floor(t*0.6+s.i)%3];
   for(const f of facAnims)f(t);
@@ -395,8 +488,9 @@ let started=false,paused=false;
 const keys={};
 addEventListener('keydown',e=>{
   if(!started)return;
-  if(e.code==='KeyC'&&!e.repeat){setPanel(!paused);return}
-  if(paused){if(e.code==='Escape')setPanel(false);return}
+  if(e.code==='KeyE'&&!e.repeat){if(ctrlOpen)setCtrl(false);else if(nearTerm&&!paused)setCtrl(true);return}
+  if(e.code==='KeyC'&&!e.repeat&&!ctrlOpen){setPanel(!paused);return}
+  if(paused){if(e.code==='Escape'){if(ctrlOpen)setCtrl(false);else setPanel(false)}return}
   keys[e.code]=true;if(e.code==='Space')e.preventDefault();
 });
 addEventListener('keyup',e=>keys[e.code]=false);
@@ -505,6 +599,7 @@ function updateRemotes(dt){
 function connect(token){
   if(typeof io==='undefined')return;
   socket=io({auth:{token}});
+  socket.on('core',onCore);
   socket.on('kicked',()=>{alert('You signed in from somewhere else.');location.reload()});
   socket.on('connect_error',e=>{if(e&&e.message==='auth'){try{localStorage.removeItem('fpsToken')}catch(_){}location.reload()}});
   socket.on('currentPlayers',list=>{for(const id in list)if(id!==socket.id)setRemote(id,list[id])});
@@ -596,6 +691,44 @@ function connect(token){
   if(token){api('/api/me',null,'GET').then(showSetup).catch(()=>{token=null;try{localStorage.removeItem('fpsToken')}catch(_){}showAuth()})}
   else showAuth();
 })();
+
+// Core terminal: proximity prompt + control panel
+let nearTerm=false,ctrlOpen=false,sliding=false,coolT=null;
+const useBtn=document.getElementById('usebtn'),crange=document.getElementById('crange');
+useBtn.textContent=isTouchDev()?'Use core terminal':'Press E: core terminal';
+function nearCheck(){
+  const n=started&&!paused&&Math.hypot(player.position.x-TERM.x,player.position.z-TERM.z)<3.4;
+  if(n!==nearTerm){nearTerm=n;useBtn.style.display=n?'block':'none'}
+}
+function setCtrl(show){
+  ctrlOpen=show;paused=show;document.getElementById('ctrlp').style.display=show?'flex':'none';
+  if(show){for(const k in keys)keys[k]=false;joyV.x=joyV.y=0;nearTerm=false;useBtn.style.display='none';updatePanel(true);if(document.exitPointerLock)document.exitPointerLock()}
+}
+function updatePanel(force){
+  const st=statusOf(coreState.t);
+  const ct=document.getElementById('ctemp');ct.textContent=coreState.t+' \u00b0C';ct.style.color=st.col;
+  const cs=document.getElementById('cstat');cs.textContent=st.name;cs.style.color=st.col;
+  document.getElementById('tmark').style.left=Math.max(0,Math.min(100,(coreState.t-300)/9))+'%';
+  document.getElementById('cby').textContent=coreState.by?'Last set by '+coreState.by:'';
+  if(force||!sliding){const v=Math.round(coreState.c*100);crange.value=v;document.getElementById('cval').textContent=v+'%'}
+}
+function onCore(c){
+  coreState.t=c.t;coreState.c=c.c;coreState.by=c.by||'';
+  drawAllReadouts();
+  if(facReadouts.lamp)facReadouts.lamp.color.set(statusOf(c.t).col);
+  if(ctrlOpen)updatePanel(false);
+}
+crange.addEventListener('pointerdown',()=>{sliding=true});
+addEventListener('pointerup',()=>{sliding=false});
+crange.addEventListener('input',()=>{
+  const v=+crange.value;document.getElementById('cval').textContent=v+'%';coreState.c=v/100;
+  clearTimeout(coolT);coolT=setTimeout(()=>{if(socket&&socket.connected)socket.emit('setCooling',v)},100);
+});
+useBtn.addEventListener('click',()=>{if(nearTerm&&!paused)setCtrl(true)});
+document.getElementById('cclose').addEventListener('click',e=>{
+  setCtrl(false);
+  if(e.pointerType==='mouse'&&cv.requestPointerLock){try{const r=cv.requestPointerLock();if(r&&r.catch)r.catch(()=>{})}catch(_){}}
+});
 
 // Full screen helpers (touch devices)
 function isTouchDev(){return 'ontouchstart' in window||navigator.maxTouchPoints>0}
