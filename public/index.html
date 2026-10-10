@@ -104,6 +104,7 @@ const rockM=new THREE.MeshLambertMaterial({color:0x8d8d8d});
 for(let i=0;i<70;i++){
   const x=(rnd()-.5)*180,z=(rnd()-.5)*180;
   if(Math.hypot(x,z)<8)continue;
+  if(Math.abs(x)<17&&Math.abs(z+30)<17)continue;
   if(rnd()<0.7){
     const s=0.8+rnd()*0.8,g=new THREE.Group();
     const t=new THREE.Mesh(new THREE.CylinderGeometry(.3*s,.4*s,2*s,8),trunkM);t.position.y=s;t.castShadow=true;
@@ -115,6 +116,105 @@ for(let i=0;i<70;i++){
     r.position.set(x,s*.5,z);r.rotation.set(rnd()*3,rnd()*3,rnd()*3);r.castShadow=true;r.receiveShadow=true;scene.add(r);
     obstacles.push({x,z,r:s*.9});
   }
+}
+
+// ===== Compute facility with a glowing core =====
+const FX=0,FZ=-30,boxes=[],facPanels=[];let facCore=null;
+function fBox(w,h,d,color,x,y,z,collide){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshLambertMaterial({color}));
+  m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;scene.add(m);
+  if(collide)boxes.push({x0:x-w/2,x1:x+w/2,z0:z-d/2,z1:z+d/2,h:y+h/2});
+  return m;
+}
+const basicM=(color,extra)=>new THREE.MeshBasicMaterial(Object.assign({color},extra||{}));
+(function(){
+  const W=10,H=5,T=0.6,WC=0xb8bec7;
+  // floor + walls (south wall has a 4-wide doorway) + roof
+  const fl=new THREE.Mesh(new THREE.PlaneGeometry(2*W,2*W),new THREE.MeshLambertMaterial({color:0x2b2f36}));
+  fl.rotation.x=-Math.PI/2;fl.position.set(FX,0.03,FZ);fl.receiveShadow=true;scene.add(fl);
+  fBox(T,H,2*W+T,WC,FX-W,H/2,FZ,true);
+  fBox(T,H,2*W+T,WC,FX+W,H/2,FZ,true);
+  fBox(2*W+T,H,T,WC,FX,H/2,FZ-W,true);
+  const segLen=W+T/2-2,segC=(W+T/2+2)/2;
+  fBox(segLen,H,T,WC,FX-segC,H/2,FZ+W,true);
+  fBox(segLen,H,T,WC,FX+segC,H/2,FZ+W,true);
+  fBox(4,1.5,T,WC,FX,H-0.75,FZ+W,false);
+  fBox(2*W+T+0.4,0.4,2*W+T+0.4,0x6b7280,FX,H+0.2,FZ,false);
+
+  // sign over the door
+  const sc=document.createElement('canvas');sc.width=512;sc.height=96;const sx=sc.getContext('2d');
+  sx.fillStyle='#0b1220';sx.fillRect(0,0,512,96);sx.font='bold 54px system-ui,sans-serif';sx.textAlign='center';sx.textBaseline='middle';
+  sx.fillStyle='#22d3ee';sx.fillText('COMPUTE CORE',256,50);
+  const sign=new THREE.Mesh(new THREE.PlaneGeometry(3.6,0.68),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(sc)}));
+  sign.position.set(FX,H-0.75,FZ+W+T/2+0.02);scene.add(sign);
+
+  // server racks with blinking lights along both side walls
+  function ledTex(seed){
+    const c=document.createElement('canvas');c.width=64;c.height=128;const x=c.getContext('2d');
+    x.fillStyle='#0b0f14';x.fillRect(0,0,64,128);
+    let q=seed;const r=()=>(q=(q*16807)%2147483647)/2147483647;
+    const cols=['#22c55e','#38bdf8','#f59e0b','#ef4444','#a78bfa'];
+    for(let row=0;row<16;row++)for(let col=0;col<6;col++)if(r()<.55){x.fillStyle=cols[Math.floor(r()*cols.length)];x.fillRect(6+col*9,6+row*7.5,5,3)}
+    return new THREE.CanvasTexture(c);
+  }
+  const ledMats=[new THREE.MeshBasicMaterial({map:ledTex(11)}),new THREE.MeshBasicMaterial({map:ledTex(97)})];
+  facPanels.mats=ledMats;
+  let idx=0;
+  for(const side of [-1,1]){
+    for(let i=0;i<6;i++){
+      const z=FZ-7+i*2.4;
+      fBox(1.0,2.6,1.4,0x1f242b,FX+side*8.9,1.3,z,true);
+      const p=new THREE.Mesh(new THREE.PlaneGeometry(1.2,2.2),ledMats[idx%2]);
+      p.position.set(FX+side*8.38,1.35,z);p.rotation.y=-side*Math.PI/2;scene.add(p);
+      facPanels.push({m:p,i:idx++});
+    }
+  }
+
+  // the core: pedestal, glowing orb in a wire cage, spinning rings, light beams
+  const core=new THREE.Group();core.position.set(FX,0,FZ);scene.add(core);
+  const ped=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.7,0.5,24),new THREE.MeshLambertMaterial({color:0x1e293b}));
+  ped.position.y=.25;ped.castShadow=true;ped.receiveShadow=true;core.add(ped);
+  const orb=new THREE.Mesh(new THREE.IcosahedronGeometry(.7,1),basicM(0x22d3ee));orb.position.y=2.3;core.add(orb);
+  const cage=new THREE.Mesh(new THREE.IcosahedronGeometry(1.0,1),basicM(0xcffafe,{wireframe:true}));cage.position.y=2.3;core.add(cage);
+  const rings=[0,1,2].map(i=>{
+    const r=new THREE.Mesh(new THREE.TorusGeometry(1.5+i*0.25,.04,8,48),basicM(0x67e8f9));
+    r.position.y=2.3;core.add(r);return r;
+  });
+  const beamMat={transparent:true,opacity:.45,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide};
+  const up=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,H+.2-3.0,12,1,true),basicM(0x22d3ee,beamMat));up.position.y=(3.0+H+.2)/2;core.add(up);
+  const dn=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,1.1,12,1,true),basicM(0x22d3ee,beamMat));dn.position.y=1.05;core.add(dn);
+  const ring=new THREE.Mesh(new THREE.RingGeometry(2.1,2.4,48),basicM(0x22d3ee,{transparent:true,opacity:.6,side:THREE.DoubleSide}));
+  ring.rotation.x=-Math.PI/2;ring.position.y=.06;core.add(ring);
+  const light=new THREE.PointLight(0x22d3ee,1.3,24);light.position.y=2.3;core.add(light);
+  obstacles.push({x:FX,z:FZ,r:1.6});
+  facCore={orb,cage,rings,light};
+
+  // control consoles around the core
+  for(const [cx,cz] of [[-4.6,-4.6],[4.6,-4.6],[-4.6,4.6],[4.6,4.6]]){
+    const g=new THREE.Group();g.position.set(FX+cx,0,FZ+cz);g.rotation.y=Math.atan2(-cx,-cz);scene.add(g);
+    const desk=new THREE.Mesh(new THREE.BoxGeometry(2,.9,.8),new THREE.MeshLambertMaterial({color:0x374151}));
+    desk.position.y=.45;desk.castShadow=true;g.add(desk);
+    const scr=new THREE.Mesh(new THREE.PlaneGeometry(1.5,.75),basicM(0x38bdf8));
+    scr.position.set(0,1.3,.06);scr.rotation.x=-.25;g.add(scr);
+    const stand=new THREE.Mesh(new THREE.BoxGeometry(.1,.4,.1),new THREE.MeshLambertMaterial({color:0x111827}));
+    stand.position.set(0,1.05,.0);g.add(stand);
+    obstacles.push({x:FX+cx,z:FZ+cz,r:1.0});
+  }
+
+  // ceiling lights
+  for(const x of [-5,5]){
+    const m=new THREE.Mesh(new THREE.BoxGeometry(.5,.06,12),basicM(0xf8fafc));
+    m.position.set(FX+x,H-.05,FZ);scene.add(m);
+  }
+  const lamp=new THREE.PointLight(0xfff1d6,.7,26);lamp.position.set(FX,H-.8,FZ+4);scene.add(lamp);
+})();
+function facilityTick(t){
+  for(const p of facPanels)p.m.material=facPanels.mats[Math.floor(t*2+p.i*0.37)%2];
+  if(!facCore)return;
+  facCore.rings.forEach((r,i)=>{r.rotation.x=t*(.6+i*.25);r.rotation.y=t*(.4+i*.2)});
+  facCore.cage.rotation.y=t*.5;facCore.cage.rotation.x=t*.3;
+  facCore.orb.scale.setScalar(1+Math.sin(t*3)*.06);
+  facCore.light.intensity=1.1+Math.sin(t*3)*.3;
 }
 
 // Characters
@@ -430,12 +530,27 @@ function tick(){
     const dx=player.position.x-o.x,dz=player.position.z-o.z,d=Math.hypot(dx,dz),m=o.r+.35;
     if(d<m&&d>0.001&&player.position.y<1.2){player.position.x=o.x+dx/d*m;player.position.z=o.z+dz/d*m}
   }
+  for(const b of boxes){
+    if(player.position.y>b.h)continue;
+    const px=player.position.x,pz=player.position.z,R=.35;
+    const cx=Math.max(b.x0,Math.min(px,b.x1)),cz=Math.max(b.z0,Math.min(pz,b.z1));
+    const dx=px-cx,dz=pz-cz,d=Math.hypot(dx,dz);
+    if(d<R){
+      if(d>1e-4){player.position.x=cx+dx/d*R;player.position.z=cz+dz/d*R}
+      else{
+        const l=px-b.x0,r=b.x1-px,t=pz-b.z0,bt=b.z1-pz,m=Math.min(l,r,t,bt);
+        if(m===l)player.position.x=b.x0-R;else if(m===r)player.position.x=b.x1+R;
+        else if(m===t)player.position.z=b.z0-R;else player.position.z=b.z1+R;
+      }
+    }
+  }
   player.position.x=Math.max(-97,Math.min(97,player.position.x));
   player.position.z=Math.max(-97,Math.min(97,player.position.z));
   // walk animation
   if(moving&&onGround)walkT+=dt*10;
   animChar(player,walkT,moving,!onGround);
   sendPresence(dt,moving);
+  facilityTick(performance.now()/1000);
   updateRemotes(dt);
   // camera
   const tx=player.position.x,tz=player.position.z;
