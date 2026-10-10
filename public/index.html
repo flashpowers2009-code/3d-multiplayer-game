@@ -316,6 +316,11 @@ function connect(token){
   $('play').addEventListener('click',async e=>{
     const mouse=e.pointerType==='mouse'&&cv.requestPointerLock;
     if(mouse){try{const r=cv.requestPointerLock();if(r&&r.catch)r.catch(()=>{})}catch(_){}}
+    // Phones/tablets: go full screen (must happen inside the tap)
+    if(!mouse&&('ontouchstart' in window||navigator.maxTouchPoints>0)){
+      const el=document.documentElement,rf=el.requestFullscreen||el.webkitRequestFullscreen;
+      if(rf){try{const r=rf.call(el);if(r&&r.catch)r.catch(()=>{})}catch(_){}}
+    }
     $('play').disabled=true;
     try{await api('/api/color',{color:myColor})}
     catch(err){
