@@ -156,23 +156,22 @@ app.post('/api/color', auth, wrap(async (req, res) => {
 const players = {};   // socket.id -> { x, y, z, r, c, n }
 const online = new Map(); // account key -> socket
 // ---- Shared reactor core: one temperature everyone sees and controls ----
-// The core cools down on its own; 4 heaters (each adds heat) and 4 coolers (each removes heat) are toggled by keys on the terminal.
+// The core always cools by exactly 1 degree C per second. Each heater key that is on adds +1 C/s
+// and each cooler key that is on removes another 1 C/s, so one heater holds it steady.
 const core = { temp: 600, cl: [false, false, false, false], ht: [false, false, false, false], by: '' };
-let simT = 0, spike = 0;
 const resetCore = () => {
-  core.temp = 600; core.cl = [false, false, false, false]; core.ht = [false, false, false, false]; core.by = ''; spike = 0;
+  core.temp = 600; core.cl = [false, false, false, false]; core.ht = [false, false, false, false]; core.by = '';
 };
+const NATURAL_COOLING = 1;  // degrees C lost per second with everything off
+const HEATER_POWER = 1;     // degrees C per second added by each heater
+const COOLER_POWER = 1;     // degrees C per second removed by each cooler
 setInterval(() => {
   if (!online.size) { resetCore(); return; }
   const dt = 0.1;
-  simT += dt;
-  if (Math.random() < 0.0006) spike = 5 + Math.random() * 5; // rare heat surge (about one every 3 minutes)
-  spike *= 0.985;
-  const heat = -2 + 0.4 * Math.sin(simT / 17) + spike; // small negative base: the core cools slowly on its own
-  const cooling = core.cl.filter(Boolean).length * 4;
-  const heating = core.ht.filter(Boolean).length * 3.5;
-  core.temp += (heat - cooling + heating - 0.004 * (core.temp - 300)) * dt;
-  core.temp = Math.max(300, Math.min(1200, core.temp));
+  const rate = -NATURAL_COOLING
+    + core.ht.filter(Boolean).length * HEATER_POWER
+    - core.cl.filter(Boolean).length * COOLER_POWER;
+  core.temp = Math.max(300, Math.min(1200, core.temp + rate * dt));
 }, 100);
 const coreMsg = () => ({ t: Math.round(core.temp), cl: core.cl, ht: core.ht, by: core.by });
 setInterval(() => { if (online.size) io.emit('core', coreMsg()); }, 250);
