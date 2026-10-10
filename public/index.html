@@ -161,7 +161,7 @@ function drawReadout(cv,compact){
   x.fillStyle='#fff';x.fillRect(bx+bw*Math.max(0,Math.min(1,(T-300)/900))-3,by-6,6,bh+12);
   x.fillStyle=st.col;x.font=f(.11,true);x.fillText(st.name,w*.04,h*.78);
   x.fillStyle='#94a3b8';x.font=f(.075,false);x.textAlign='right';x.fillText('COOL '+coreState.cl.filter(Boolean).length+'/4 \u00b7 HEAT '+coreState.ht.filter(Boolean).length+'/4',w*.96,h*.8);
-  if(compact){x.textAlign='center';x.fillStyle='#64748b';x.fillText('Use the wall buttons: COOLING / HEATING',w/2,h*.92)}
+  if(compact){x.textAlign='center';x.fillStyle='#64748b';x.fillText('Use the COOL / HEAT keys below',w/2,h*.92)}
 }
 function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compact);r.tex.needsUpdate=true}}
 (function(){
@@ -323,34 +323,31 @@ function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compac
   const frame=new THREE.Mesh(new THREE.BoxGeometry(2.8,1.7,.12),dark(0x111827));frame.position.set(0,1.85,-.2);frame.rotation.x=-.2;tg.add(frame);
   const scr=new THREE.Mesh(new THREE.PlaneGeometry(2.6,1.5),new THREE.MeshBasicMaterial({map:termTex}));
   scr.position.set(0,1.86,-.13);scr.rotation.x=-.2;tg.add(scr);
-  const kb=new THREE.Mesh(new THREE.BoxGeometry(1.4,.04,.4),dark(0x0b1220));kb.position.set(0,.92,.2);tg.add(kb);
+  const kb=new THREE.Mesh(new THREE.BoxGeometry(2.9,.04,.55),dark(0x0b1220));kb.position.set(0,.92,.22);tg.add(kb);
   const lampMat=basicM(0x22d3ee);
   const lamp=new THREE.Mesh(new THREE.BoxGeometry(.5,.14,.14),lampMat);lamp.position.set(0,2.88,-.25);tg.add(lamp);
   facReadouts.lamp=lampMat;
   obstacles.push({x:TERM.x,z:TERM.z,r:1.5});
   drawAllReadouts();
 
-  // physical control panels on the north wall: 4 coolers (blue, left) and 4 heaters (red, right)
-  function tag(text,w,lx,ly,lz,col){
-    const c=cvs(256,128),x=c.getContext('2d');
-    x.fillStyle='#0b1220';x.fillRect(0,0,256,128);x.strokeStyle=col;x.lineWidth=5;x.strokeRect(3,3,250,122);
-    x.font='bold 58px system-ui,sans-serif';x.textAlign='center';x.textBaseline='middle';x.fillStyle=col;x.fillText(text,128,66,235);
-    const m=new THREE.Mesh(new THREE.PlaneGeometry(w,w/2),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(c)}));
-    m.position.set(FX+lx,ly,FZ+lz);scene.add(m);
+  // the 8 control keys on the terminal keyboard: 4 coolers (blue) and 4 heaters (red)
+  function flatLabel(text,w,h,col,parent,x,y,z){
+    const c=cvs(128,Math.round(128*h/w)),cx=c.getContext('2d');
+    cx.font='bold '+Math.round(c.height*.7)+'px system-ui,sans-serif';cx.textAlign='center';cx.textBaseline='middle';
+    cx.fillStyle=col;cx.fillText(text,c.width/2,c.height/2+2,c.width-6);
+    const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(c),transparent:true}));
+    m.rotation.x=-Math.PI/2;m.position.set(x,y,z);parent.add(m);
   }
-  const banks=[{type:'cool',name:'Cooler',cx:-6.2,xs:[-8.0,-6.8,-5.6,-4.4],col:'#38bdf8',on:0x38bdf8,off:0x16324f,banner:'COOLING'},
-               {type:'heat',name:'Heater',cx:6.2,xs:[4.4,5.6,6.8,8.0],col:'#ff5a4d',on:0xff5a4d,off:0x4a1717,banner:'HEATING'}];
-  for(const bk of banks){
-    B(5.2,1.3,.12,0x111827,bk.cx,1.6,-9.64,false);
-    tag(bk.banner,2.6,bk.cx,2.7,-9.66,bk.col);
-    bk.xs.forEach((bx,i)=>{
-      const bez=new THREE.Mesh(new THREE.CylinderGeometry(.38,.38,.08,24),new THREE.MeshLambertMaterial({color:0x020617}));
-      bez.rotation.x=Math.PI/2;bez.position.set(FX+bx,1.75,FZ-9.54);scene.add(bez);
-      const m=new THREE.Mesh(new THREE.CylinderGeometry(.3,.3,.14,24),basicM(bk.off));
-      m.rotation.x=Math.PI/2;m.position.set(FX+bx,1.75,FZ-9.5);scene.add(m);
-      m.userData={type:bk.type,i,label:bk.name+' '+(i+1),on:bk.on,off:bk.off,pressT:0};
+  const keyGroups=[{type:'cool',name:'Cooler',xs:[-1.26,-.94,-.62,-.30],col:'#38bdf8',on:0x38bdf8,off:0x16324f,title:'COOL'},
+                   {type:'heat',name:'Heater',xs:[.30,.62,.94,1.26],col:'#ff5a4d',on:0xff5a4d,off:0x4a1717,title:'HEAT'}];
+  for(const g of keyGroups){
+    flatLabel(g.title,.9,.2,g.col,tg,(g.xs[0]+g.xs[3])/2,.945,.44);
+    g.xs.forEach((kx,i)=>{
+      const m=new THREE.Mesh(new THREE.BoxGeometry(.27,.1,.27),basicM(g.off));
+      m.position.set(kx,.99,.16);tg.add(m);
+      m.userData={type:g.type,i,label:g.name+' '+(i+1),on:g.on,off:g.off,pressT:0};
       btnMeshes.push(m);
-      tag(String(i+1),.7,bx,1.2,-9.66,bk.col);
+      flatLabel(String(i+1),.2,.2,'#ffffff',m,0,.052,0);
     });
   }
 
@@ -727,7 +724,7 @@ function aimCheck(){
     if(!isTouchDev()){
       aimBtn=pickButton(0,0);
       if(aimBtn){const u=aimBtn.userData;txt=u.label+': '+(btnOn(u)?'ON':'OFF')+'  \u2022  E / click to switch'}
-    }else if(Math.hypot(player.position.x-(FX-6.2),player.position.z-(FZ-9))<6||Math.hypot(player.position.x-(FX+6.2),player.position.z-(FZ-9))<6){
+    }else if(Math.hypot(player.position.x-TERM.x,player.position.z-TERM.z)<4.5){
       txt='Tap a button to switch it';
     }
   }
