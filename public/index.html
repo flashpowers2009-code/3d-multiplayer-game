@@ -12,24 +12,27 @@ canvas{display:block;width:100%;height:100%}
 #jump{position:fixed;right:28px;bottom:calc(40px + env(safe-area-inset-bottom,0px));width:76px;height:76px;border-radius:50%;background:rgba(255,255,255,.3);border:2px solid rgba(255,255,255,.6);color:#fff;font-weight:600;display:none;align-items:center;justify-content:center;touch-action:none}
 #hint{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:0;right:0;text-align:center;color:#fff;font-size:13px;text-shadow:0 1px 3px rgba(0,0,0,.5);pointer-events:none}
 #menu{position:fixed;inset:0;z-index:10;display:flex;align-items:flex-end;justify-content:center;padding:16px calc(16px + env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) calc(16px + env(safe-area-inset-left,0px));box-sizing:border-box;pointer-events:none}
-#panel{pointer-events:auto;background:rgba(15,23,42,.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.2);border-radius:16px;padding:18px 20px;color:#fff;text-align:center;max-width:360px;width:100%;box-sizing:border-box}
-#panel h1{font-size:18px;margin:0 0 4px}#panel p{font-size:13px;margin:0 0 12px;opacity:.8}
-#sw{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-bottom:14px}
+#panel,#cbox{pointer-events:auto;background:rgba(15,23,42,.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.2);border-radius:16px;padding:18px 20px;color:#fff;text-align:center;max-width:360px;width:100%;box-sizing:border-box}
+#panel h1,#cbox h1{font-size:18px;margin:0 0 4px}#panel p{font-size:13px;margin:0 0 12px;opacity:.8}
+#sw,#sw2{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-bottom:14px}
 .sw{width:34px;height:34px;border-radius:50%;border:3px solid transparent;cursor:pointer;padding:0;box-sizing:border-box;outline:1px solid rgba(255,255,255,.35)}
 .sw.on{border-color:#fff}
-#custom{display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;margin-bottom:16px}
-#custom input{width:44px;height:30px;border:none;background:none;padding:0;cursor:pointer}
-#go,#play{width:100%;padding:12px;border:none;border-radius:10px;background:#22c55e;color:#fff;font-size:16px;font-weight:600;cursor:pointer}
+#custom,#custom2{display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;margin-bottom:16px}
+#custom input,#custom2 input{width:44px;height:30px;border:none;background:none;padding:0;cursor:pointer}
+#go,#play,#cdone{width:100%;padding:12px;border:none;border-radius:10px;background:#22c55e;color:#fff;font-size:16px;font-weight:600;cursor:pointer}
 #xh{position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.5);display:none;pointer-events:none}
 #un,#pw{width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:14px;border-radius:10px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;font-size:16px;text-align:center;outline:none}
 #un::placeholder,#pw::placeholder{color:rgba(255,255,255,.55)}
 #err{min-height:18px;margin:-6px 0 8px;font-size:13px;color:#fca5a5}
 #swap{margin-top:12px;font-size:13px;opacity:.85}#swap a{color:#93c5fd}
 #warn{background:rgba(220,38,38,.25);border:1px solid rgba(252,165,165,.6);border-radius:8px;padding:8px 10px;margin-bottom:12px;font-size:12px;line-height:1.4;text-align:left}
+#cbtn{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));right:calc(10px + env(safe-area-inset-right,0px));z-index:5;display:none;padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.5);background:rgba(15,23,42,.55);color:#fff;font-size:14px;cursor:pointer}
+#cpanel{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;background:rgba(0,0,0,.35)}
+#cbox{padding:18px 20px;max-width:360px;width:100%;box-sizing:border-box}
 </style>
 </head>
 <body>
-<div id="hint">Click the screen to capture mouse · WASD / arrows to move · Space to jump · Esc to release</div>
+<div id="hint">Click the screen to capture mouse · WASD / arrows to move · Space to jump · C shirt color · Esc to release</div>
 <div id="count" style="position:fixed;top:calc(34px + env(safe-area-inset-top,0px));left:0;right:0;text-align:center;color:#fff;font-size:12px;text-shadow:0 1px 3px rgba(0,0,0,.5);pointer-events:none">1 player online</div>
 <div id="menu"><div id="panel">
 <div id="warn" style="display:none"></div>
@@ -48,6 +51,13 @@ canvas{display:block;width:100%;height:100%}
 <button id="play">Enter game</button>
 <div id="swap"><a href="#" id="logout">Log out</a></div>
 </div>
+</div></div>
+<button id="cbtn">🎨 Color</button>
+<div id="cpanel"><div id="cbox" style="background:rgba(15,23,42,.88);border:1px solid rgba(255,255,255,.2);border-radius:16px;color:#fff;text-align:center">
+<h1>Shirt color</h1><p style="font-size:13px;margin:0 0 12px;opacity:.8">Changes save to your account.</p>
+<div id="sw2"></div>
+<label id="custom2">Custom: <input type="color" id="cc2" value="#3b82f6"></label>
+<button id="cdone">Done</button>
 </div></div>
 <div id="xh"></div>
 <div id="joy"><div id="knob"></div></div>
@@ -129,9 +139,14 @@ let myName='Player';
 scene.add(player);
 
 // State
-let started=false;
+let started=false,paused=false;
 const keys={};
-addEventListener('keydown',e=>{if(!started)return;keys[e.code]=true;if(e.code==='Space')e.preventDefault()});
+addEventListener('keydown',e=>{
+  if(!started)return;
+  if(e.code==='KeyC'&&!e.repeat){setPanel(!paused);return}
+  if(paused){if(e.code==='Escape')setPanel(false);return}
+  keys[e.code]=true;if(e.code==='Space')e.preventDefault();
+});
 addEventListener('keyup',e=>keys[e.code]=false);
 let yaw=0,pitch=0,dist=5;const menuPitch=0.35;
 const joyV={x:0,y:0};let jumpQueued=false;
@@ -141,13 +156,13 @@ const vel=new THREE.Vector3();let onGround=true,faceAngle=0,walkT=0;
 const looks=new Map();
 const cv=renderer.domElement;
 const hintEl=document.getElementById('hint');
-const MOUSE_HINT='Click the screen to capture mouse · WASD / arrows to move · Space to jump · Esc to release';
-const LOCKED_HINT='WASD / arrows to move · Space to jump · Esc to release mouse';
+const MOUSE_HINT='Click the screen to capture mouse · WASD / arrows to move · Space to jump · C shirt color · Esc to release';
+const LOCKED_HINT='WASD / arrows to move · Space to jump · C shirt color · Esc to release mouse';
 const locked=()=>document.pointerLockElement===cv;
 document.addEventListener('pointerlockchange',()=>{hintEl.textContent=locked()?LOCKED_HINT:MOUSE_HINT});
 function look(dx,dy){yaw-=dx*0.0025;pitch=Math.max(-1.5,Math.min(1.5,pitch-dy*0.0025))}
 cv.addEventListener('pointerdown',e=>{
-  if(!started)return;
+  if(!started||paused)return;
   if(e.pointerType==='mouse'&&cv.requestPointerLock){
     if(!locked()){try{const r=cv.requestPointerLock();if(r&&r.catch)r.catch(()=>{})}catch(_){}}
     return;
@@ -221,6 +236,7 @@ function setRemote(id,d){
     r={g,t:null,walk:0};remotes.set(id,r);updateCount();
   }
   r.t={x:d.x,y:d.y||0,z:d.z,r:d.r||0};
+  if(typeof d.c==='number'&&r.c!==d.c){r.c=d.c;r.g.userData.sm.color.setHex(d.c)}
   setTag(r,typeof d.n==='string'&&d.n?d.n.slice(0,16):'Player');
 }
 function updateRemotes(dt){
@@ -308,7 +324,7 @@ function connect(token){
     }
     started=true;document.getElementById('menu').style.display='none';
     pitch=0;camera.fov=75;camera.updateProjectionMatrix();player.visible=false;
-    document.getElementById('xh').style.display='block';
+    document.getElementById('xh').style.display='block';document.getElementById('cbtn').style.display='block';
     connect(token);
   });
 
@@ -322,6 +338,31 @@ function connect(token){
   if(token){api('/api/me',null,'GET').then(showSetup).catch(()=>{token=null;try{localStorage.removeItem('fpsToken')}catch(_){}showAuth()})}
   else showAuth();
 })();
+
+// In-game shirt color panel (press C, or tap the Color button)
+const cSw=document.getElementById('sw2'),cCc=document.getElementById('cc2');
+let cTimer=null;
+const hexOf2=n=>'#'+n.toString(16).padStart(6,'0');
+function markColor(){
+  const h=hexOf2(myColor).toLowerCase();cCc.value=h;
+  cSw.querySelectorAll('.sw').forEach(b=>b.classList.toggle('on',b.dataset.c.toLowerCase()===h));
+}
+function applyColor(hex,instant){
+  myColor=parseInt(hex.slice(1),16);player.userData.sm.color.setHex(myColor);markColor();
+  clearTimeout(cTimer);
+  cTimer=setTimeout(()=>{if(socket&&socket.connected)socket.emit('setColor',myColor)},instant?0:400);
+}
+SWATCHES.forEach(c=>{const b=document.createElement('button');b.className='sw';b.dataset.c=c;b.style.background=c;b.setAttribute('aria-label','Shirt color '+c);b.onclick=()=>applyColor(c,true);cSw.appendChild(b)});
+cCc.addEventListener('input',()=>applyColor(cCc.value,false));
+function setPanel(show){
+  paused=show;document.getElementById('cpanel').style.display=show?'flex':'none';
+  if(show){for(const k in keys)keys[k]=false;joyV.x=joyV.y=0;markColor();if(document.exitPointerLock)document.exitPointerLock()}
+}
+document.getElementById('cbtn').addEventListener('click',()=>setPanel(!paused));
+document.getElementById('cdone').addEventListener('click',e=>{
+  setPanel(false);
+  if(e.pointerType==='mouse'&&cv.requestPointerLock){try{const r=cv.requestPointerLock();if(r&&r.catch)r.catch(()=>{})}catch(_){}}
+});
 
 const SPEED=6,GRAV=-26,JUMP=9;
 const clock=new THREE.Clock();
