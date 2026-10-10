@@ -31,18 +31,7 @@ canvas{display:block;width:100%;height:100%}
 #cbox{padding:18px 20px;max-width:360px;width:100%;box-sizing:border-box}
 #fsbtn{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));left:calc(10px + env(safe-area-inset-left,0px));z-index:5;display:none;padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.5);background:rgba(15,23,42,.55);color:#fff;font-size:16px;cursor:pointer}
 #toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(56px + env(safe-area-inset-top,0px));z-index:30;display:none;max-width:85%;padding:8px 12px;border-radius:10px;background:rgba(15,23,42,.9);color:#fff;font-size:13px;text-align:center;pointer-events:none}
-#ctrlp{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;background:rgba(0,0,0,.4)}
-#ctrlbox{background:rgba(15,23,42,.92);border:1px solid rgba(255,255,255,.2);border-radius:16px;padding:18px 20px;color:#fff;text-align:center;max-width:360px;width:100%;box-sizing:border-box}
-#ctrlbox h1{font-size:18px;margin:0 0 8px}
-#ctemp{font-size:44px;font-weight:700;line-height:1.1}
-#cstat{font-size:15px;font-weight:700;letter-spacing:.08em;margin:2px 0 10px}
-#tbar{position:relative;height:14px;border-radius:7px;margin:0 0 16px;background:linear-gradient(to right,#3b82f6 0%,#22d3ee 17%,#22d3ee 50%,#fbbf24 60%,#f97316 67%,#ef4444 78%,#ef4444 100%)}
-#tmark{position:absolute;top:-4px;width:4px;height:22px;background:#fff;border-radius:2px;left:0;transform:translateX(-2px)}
-.rowlab{display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px}
-#crange{width:100%;margin:0 0 8px;height:34px}
-#cby{font-size:12px;opacity:.7;min-height:16px;margin-bottom:12px}
-#cclose{width:100%;padding:12px;border:none;border-radius:10px;background:#22c55e;color:#fff;font-size:16px;font-weight:600;cursor:pointer}
-#usebtn{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(170px + env(safe-area-inset-bottom,0px));z-index:6;display:none;padding:10px 16px;border-radius:999px;border:1px solid rgba(255,255,255,.6);background:rgba(15,23,42,.75);color:#fff;font-size:15px;cursor:pointer}
+#aimhint{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(170px + env(safe-area-inset-bottom,0px));z-index:6;display:none;padding:8px 14px;border-radius:999px;background:rgba(15,23,42,.78);border:1px solid rgba(255,255,255,.4);color:#fff;font-size:14px;pointer-events:none;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -75,16 +64,7 @@ canvas{display:block;width:100%;height:100%}
 <label id="custom2">Custom: <input type="color" id="cc2" value="#3b82f6"></label>
 <button id="cdone">Done</button>
 </div></div>
-<button id="usebtn"></button>
-<div id="ctrlp"><div id="ctrlbox">
-<h1>Core cooling control</h1>
-<div id="ctemp">--- °C</div><div id="cstat">NORMAL</div>
-<div id="tbar"><div id="tmark"></div></div>
-<div class="rowlab"><span>Cooling level</span><b id="cval">30%</b></div>
-<input type="range" id="crange" min="0" max="100" value="30">
-<div id="cby"></div>
-<button id="cclose">Close</button>
-</div></div>
+<div id="aimhint"></div>
 <div id="xh"></div>
 <div id="joy"><div id="knob"></div></div>
 <div id="jump">Jump</div>
@@ -151,7 +131,8 @@ function fBox(w,h,d,color,x,y,z,collide){
 }
 const basicM=(color,extra)=>new THREE.MeshBasicMaterial(Object.assign({color},extra||{}));
 const TERM={x:FX-4.6,z:FZ-4.6};
-const coreState={t:600,c:0.3,by:''};
+const coreState={t:600,cl:[true,false,false,false],ht:[false,false,false,false],by:''};
+const btnMeshes=[];
 const facReadouts=[];
 function statusOf(T){
   if(T<450)return{name:'COLD',col:'#3b82f6'};
@@ -179,8 +160,8 @@ function drawReadout(cv,compact){
   x.fillStyle=g;x.fillRect(bx,by,bw,bh);
   x.fillStyle='#fff';x.fillRect(bx+bw*Math.max(0,Math.min(1,(T-300)/900))-3,by-6,6,bh+12);
   x.fillStyle=st.col;x.font=f(.11,true);x.fillText(st.name,w*.04,h*.78);
-  x.fillStyle='#94a3b8';x.font=f(.075,false);x.textAlign='right';x.fillText('COOLING '+Math.round(coreState.c*100)+'%',w*.96,h*.8);
-  if(compact){x.textAlign='center';x.fillStyle='#64748b';x.fillText('Press E to adjust cooling',w/2,h*.92)}
+  x.fillStyle='#94a3b8';x.font=f(.075,false);x.textAlign='right';x.fillText('COOL '+coreState.cl.filter(Boolean).length+'/4 \u00b7 HEAT '+coreState.ht.filter(Boolean).length+'/4',w*.96,h*.8);
+  if(compact){x.textAlign='center';x.fillStyle='#64748b';x.fillText('Use the wall buttons: COOLING / HEATING',w/2,h*.92)}
 }
 function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compact);r.tex.needsUpdate=true}}
 (function(){
@@ -349,6 +330,30 @@ function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compac
   obstacles.push({x:TERM.x,z:TERM.z,r:1.5});
   drawAllReadouts();
 
+  // physical control panels on the north wall: 4 coolers (blue, left) and 4 heaters (red, right)
+  function tag(text,w,lx,ly,lz,col){
+    const c=cvs(256,128),x=c.getContext('2d');
+    x.fillStyle='#0b1220';x.fillRect(0,0,256,128);x.strokeStyle=col;x.lineWidth=5;x.strokeRect(3,3,250,122);
+    x.font='bold 58px system-ui,sans-serif';x.textAlign='center';x.textBaseline='middle';x.fillStyle=col;x.fillText(text,128,66,235);
+    const m=new THREE.Mesh(new THREE.PlaneGeometry(w,w/2),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(c)}));
+    m.position.set(FX+lx,ly,FZ+lz);scene.add(m);
+  }
+  const banks=[{type:'cool',name:'Cooler',cx:-6.2,xs:[-8.0,-6.8,-5.6,-4.4],col:'#38bdf8',on:0x38bdf8,off:0x16324f,banner:'COOLING'},
+               {type:'heat',name:'Heater',cx:6.2,xs:[4.4,5.6,6.8,8.0],col:'#ff5a4d',on:0xff5a4d,off:0x4a1717,banner:'HEATING'}];
+  for(const bk of banks){
+    B(5.2,1.3,.12,0x111827,bk.cx,1.6,-9.64,false);
+    tag(bk.banner,2.6,bk.cx,2.7,-9.66,bk.col);
+    bk.xs.forEach((bx,i)=>{
+      const bez=new THREE.Mesh(new THREE.CylinderGeometry(.38,.38,.08,24),new THREE.MeshLambertMaterial({color:0x020617}));
+      bez.rotation.x=Math.PI/2;bez.position.set(FX+bx,1.75,FZ-9.54);scene.add(bez);
+      const m=new THREE.Mesh(new THREE.CylinderGeometry(.3,.3,.14,24),basicM(bk.off));
+      m.rotation.x=Math.PI/2;m.position.set(FX+bx,1.75,FZ-9.5);scene.add(m);
+      m.userData={type:bk.type,i,label:bk.name+' '+(i+1),on:bk.on,off:bk.off,pressT:0};
+      btnMeshes.push(m);
+      tag(String(i+1),.7,bx,1.2,-9.66,bk.col);
+    });
+  }
+
   // the core reacts to its temperature: color, spin speed, pulse rate, flashing alarm
   const cTmp=new THREE.Color(),white=new THREE.Color(0xffffff);
   const decals=core.children.filter(m=>m.geometry&&m.geometry.type==='RingGeometry');
@@ -452,7 +457,7 @@ function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compac
   facAnims.push(t=>{tip.visible=Math.floor(t*1.5)%2===0});
 })();
 function facilityTick(t){
-  nearCheck();
+  aimCheck();
   for(const p of facPanels)p.m.material=facPanels.mats[Math.floor(t*2+p.i*0.37)%2];
   for(const s of facScreens)s.m.material=facScreens.mats[Math.floor(t*0.6+s.i)%3];
   for(const f of facAnims)f(t);
@@ -488,9 +493,9 @@ let started=false,paused=false;
 const keys={};
 addEventListener('keydown',e=>{
   if(!started)return;
-  if(e.code==='KeyE'&&!e.repeat){if(ctrlOpen)setCtrl(false);else if(nearTerm&&!paused)setCtrl(true);return}
-  if(e.code==='KeyC'&&!e.repeat&&!ctrlOpen){setPanel(!paused);return}
-  if(paused){if(e.code==='Escape'){if(ctrlOpen)setCtrl(false);else setPanel(false)}return}
+  if(e.code==='KeyE'&&!e.repeat){if(!paused&&aimBtn)pressBtn(aimBtn);return}
+  if(e.code==='KeyC'&&!e.repeat){setPanel(!paused);return}
+  if(paused){if(e.code==='Escape')setPanel(false);return}
   keys[e.code]=true;if(e.code==='Space')e.preventDefault();
 });
 addEventListener('keyup',e=>keys[e.code]=false);
@@ -510,10 +515,11 @@ function look(dx,dy){yaw-=dx*0.0025;pitch=Math.max(-1.5,Math.min(1.5,pitch-dy*0.
 cv.addEventListener('pointerdown',e=>{
   if(!started||paused)return;
   if(e.pointerType==='mouse'&&cv.requestPointerLock){
-    if(!locked()){try{const r=cv.requestPointerLock();if(r&&r.catch)r.catch(()=>{})}catch(_){}}
+    if(locked()){if(aimBtn)pressBtn(aimBtn)}
+    else{try{const r=cv.requestPointerLock();if(r&&r.catch)r.catch(()=>{})}catch(_){}}
     return;
   }
-  cv.setPointerCapture(e.pointerId);looks.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  cv.setPointerCapture(e.pointerId);looks.set(e.pointerId,{x:e.clientX,y:e.clientY,sx:e.clientX,sy:e.clientY,t:performance.now()});
 });
 cv.addEventListener('pointermove',e=>{
   if(locked()){look(e.movementX,e.movementY);return}
@@ -523,7 +529,13 @@ cv.addEventListener('pointermove',e=>{
   p.x=e.clientX;p.y=e.clientY;
 });
 const endLook=e=>looks.delete(e.pointerId);
-cv.addEventListener('pointerup',endLook);cv.addEventListener('pointercancel',endLook);
+cv.addEventListener('pointerup',e=>{
+  const p=looks.get(e.pointerId);looks.delete(e.pointerId);
+  if(p&&started&&!paused&&e.pointerType!=='mouse'&&Math.hypot(e.clientX-p.sx,e.clientY-p.sy)<12&&performance.now()-p.t<400){
+    const b=pickButton(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);if(b)pressBtn(b);
+  }
+});
+cv.addEventListener('pointercancel',endLook);
 cv.addEventListener('wheel',e=>{dist=Math.max(3,Math.min(16,dist+e.deltaY*0.01));e.preventDefault()},{passive:false});
 
 // Touch controls
@@ -692,43 +704,44 @@ function connect(token){
   else showAuth();
 })();
 
-// Core terminal: proximity prompt + control panel
-let nearTerm=false,ctrlOpen=false,sliding=false,coolT=null;
-const useBtn=document.getElementById('usebtn'),crange=document.getElementById('crange');
-useBtn.textContent=isTouchDev()?'Use core terminal':'Press E: core terminal';
-function nearCheck(){
-  const n=started&&!paused&&Math.hypot(player.position.x-TERM.x,player.position.z-TERM.z)<3.4;
-  if(n!==nearTerm){nearTerm=n;useBtn.style.display=n?'block':'none'}
+// Core buttons: aim + press (E / click on desktop, tap on touch)
+const ray=new THREE.Raycaster();ray.far=5;
+let aimBtn=null;
+const aimHint=document.getElementById('aimhint');
+const btnOn=u=>u.type==='cool'?coreState.cl[u.i]:coreState.ht[u.i];
+function pickButton(nx,ny){
+  ray.setFromCamera({x:nx,y:ny},camera);
+  const h=ray.intersectObjects(btnMeshes,false)[0];
+  return h?h.object:null;
 }
-function setCtrl(show){
-  ctrlOpen=show;paused=show;document.getElementById('ctrlp').style.display=show?'flex':'none';
-  if(show){for(const k in keys)keys[k]=false;joyV.x=joyV.y=0;nearTerm=false;useBtn.style.display='none';updatePanel(true);if(document.exitPointerLock)document.exitPointerLock()}
+function pressBtn(m){
+  m.userData.pressT=performance.now();
+  if(socket&&socket.connected)socket.emit('pressButton',{type:m.userData.type,i:m.userData.i});
 }
-function updatePanel(force){
-  const st=statusOf(coreState.t);
-  const ct=document.getElementById('ctemp');ct.textContent=coreState.t+' \u00b0C';ct.style.color=st.col;
-  const cs=document.getElementById('cstat');cs.textContent=st.name;cs.style.color=st.col;
-  document.getElementById('tmark').style.left=Math.max(0,Math.min(100,(coreState.t-300)/9))+'%';
-  document.getElementById('cby').textContent=coreState.by?'Last set by '+coreState.by:'';
-  if(force||!sliding){const v=Math.round(coreState.c*100);crange.value=v;document.getElementById('cval').textContent=v+'%'}
+function updateButtons(){
+  for(const m of btnMeshes){const u=m.userData;m.material.color.setHex(btnOn(u)?u.on:u.off)}
+}
+function aimCheck(){
+  let txt='';aimBtn=null;
+  if(started&&!paused){
+    if(!isTouchDev()){
+      aimBtn=pickButton(0,0);
+      if(aimBtn){const u=aimBtn.userData;txt=u.label+': '+(btnOn(u)?'ON':'OFF')+'  \u2022  E / click to switch'}
+    }else if(Math.hypot(player.position.x-(FX-6.2),player.position.z-(FZ-9))<6||Math.hypot(player.position.x-(FX+6.2),player.position.z-(FZ-9))<6){
+      txt='Tap a button to switch it';
+    }
+  }
+  if(txt!==aimHint.textContent)aimHint.textContent=txt;
+  aimHint.style.display=txt?'block':'none';
+  const now=performance.now();
+  for(const m of btnMeshes)m.scale.y=now-m.userData.pressT<160?.35:1;
 }
 function onCore(c){
-  coreState.t=c.t;coreState.c=c.c;coreState.by=c.by||'';
-  drawAllReadouts();
+  coreState.t=c.t;coreState.cl=c.cl||coreState.cl;coreState.ht=c.ht||coreState.ht;coreState.by=c.by||'';
+  drawAllReadouts();updateButtons();
   if(facReadouts.lamp)facReadouts.lamp.color.set(statusOf(c.t).col);
-  if(ctrlOpen)updatePanel(false);
 }
-crange.addEventListener('pointerdown',()=>{sliding=true});
-addEventListener('pointerup',()=>{sliding=false});
-crange.addEventListener('input',()=>{
-  const v=+crange.value;document.getElementById('cval').textContent=v+'%';coreState.c=v/100;
-  clearTimeout(coolT);coolT=setTimeout(()=>{if(socket&&socket.connected)socket.emit('setCooling',v)},100);
-});
-useBtn.addEventListener('click',()=>{if(nearTerm&&!paused)setCtrl(true)});
-document.getElementById('cclose').addEventListener('click',e=>{
-  setCtrl(false);
-  if(e.pointerType==='mouse'&&cv.requestPointerLock){try{const r=cv.requestPointerLock();if(r&&r.catch)r.catch(()=>{})}catch(_){}}
-});
+updateButtons();
 
 // Full screen helpers (touch devices)
 function isTouchDev(){return 'ontouchstart' in window||navigator.maxTouchPoints>0}
