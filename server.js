@@ -155,20 +155,26 @@ app.post('/api/color', auth, wrap(async (req, res) => {
 /* ---------- Multiplayer ---------- */
 const players = {};   // socket.id -> { x, y, z, r, c, n }
 const online = new Map(); // account key -> socket
-// ---- Shared reactor core: one temperature everyone sees and can control ----
-const core = { temp: 600, cool: 0.3, by: '' };
+// ---- Shared reactor core: one temperature everyone sees and controls ----
+// 4 coolers (each removes heat) and 4 heaters (each adds heat), toggled by buttons in the core hall.
+const core = { temp: 600, cl: [true, false, false, false], ht: [false, false, false, false], by: '' };
 let simT = 0, spike = 0;
+const resetCore = () => {
+  core.temp = 600; core.cl = [true, false, false, false]; core.ht = [false, false, false, false]; core.by = ''; spike = 0;
+};
 setInterval(() => {
-  if (!online.size) { core.temp = 600; core.cool = 0.3; core.by = ''; spike = 0; return; }
+  if (!online.size) { resetCore(); return; }
   const dt = 0.1;
   simT += dt;
   if (Math.random() < 0.004) spike = 8 + Math.random() * 10; // occasional heat surge
   spike *= 0.985;
   const heat = 12 + 4 * Math.sin(simT / 17) + spike;
-  core.temp += (heat - 30 * core.cool - 0.01 * (core.temp - 300)) * dt;
+  const cooling = core.cl.filter(Boolean).length * 6;
+  const heating = core.ht.filter(Boolean).length * 3;
+  core.temp += (heat - cooling + heating - 0.02 * (core.temp - 300)) * dt;
   core.temp = Math.max(280, Math.min(1200, core.temp));
 }, 100);
-const coreMsg = () => ({ t: Math.round(core.temp), c: core.cool, by: core.by });
+const coreMsg = () => ({ t: Math.round(core.temp), cl: core.cl, ht: core.ht, by: core.by });
 setInterval(() => { if (online.size) io.emit('core', coreMsg()); }, 250);
 const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
 
@@ -208,14 +214,17 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('serverUpdate', socket.id, players[socket.id]);
   });
 
-  // Adjust the core cooling level (0-100)
-  let lastCool = 0;
-  socket.on('setCooling', (v) => {
+  // Press a cooler/heater button in the core hall (toggles it for everyone)
+  let lastPress = 0;
+  socket.on('pressButton', (d) => {
     const now = Date.now();
-    if (typeof v !== 'number' || !isFinite(v) || now - lastCool < 80) return;
-    lastCool = now;
-    core.cool = Math.max(0, Math.min(100, Math.round(v))) / 100;
+    if (!d || now - lastPress < 120) return;
+    if ((d.type !== 'cool' && d.type !== 'heat') || !Number.isInteger(d.i) || d.i < 0 || d.i > 3) return;
+    lastPress = now;
+    const arr = d.type === 'cool' ? core.cl : core.ht;
+    arr[d.i] = !arr[d.i];
     core.by = username;
+    io.emit('core', coreMsg());
   });
 
   // Change shirt color any time; saved to the account and shown to everyone
