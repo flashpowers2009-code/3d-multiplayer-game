@@ -156,15 +156,16 @@ app.post('/api/color', auth, wrap(async (req, res) => {
 const players = {};   // socket.id -> { x, y, z, r, c, n }
 const online = new Map(); // account key -> socket
 // ---- Shared reactor core: one temperature everyone sees and controls ----
-// The core always cools by exactly 1 degree C per second. Each heater key that is on adds +1 C/s
-// and each cooler key that is on removes another 1 C/s, so one heater holds it steady.
+// The core always cools by exactly 1 degree C per second. Each heater key that is on adds +2 C/s and
+// each cooler key that is on removes 2 C/s. The net rate is always odd (-1, +1, -3, +3...), so it can
+// never hold steady: workers have to keep switching keys to keep the core in range.
 const core = { temp: 600, cl: [false, false, false, false], ht: [false, false, false, false], by: '' };
 const resetCore = () => {
   core.temp = 600; core.cl = [false, false, false, false]; core.ht = [false, false, false, false]; core.by = '';
 };
 const NATURAL_COOLING = 1;  // degrees C lost per second with everything off
-const HEATER_POWER = 1;     // degrees C per second added by each heater
-const COOLER_POWER = 1;     // degrees C per second removed by each cooler
+const HEATER_POWER = 2;     // degrees C per second added by each heater
+const COOLER_POWER = 2;     // degrees C per second removed by each cooler
 setInterval(() => {
   if (!online.size) { resetCore(); return; }
   const dt = 0.1;
