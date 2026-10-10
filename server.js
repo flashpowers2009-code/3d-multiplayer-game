@@ -168,7 +168,9 @@ io.use(async (socket, next) => {
 });
 
 io.on('connection', (socket) => {
-  const { key, username, color } = socket.account;
+  const { key, username } = socket.account;
+  let color = socket.account.color;
+  let lastColorChange = 0;
   // One session per account: a new login replaces the old one
   const prev = online.get(key);
   if (prev) { prev.emit('kicked'); prev.disconnect(true); }
@@ -188,6 +190,19 @@ io.on('connection', (socket) => {
       n: username,
     };
     socket.broadcast.emit('serverUpdate', socket.id, players[socket.id]);
+  });
+
+  // Change shirt color any time; saved to the account and shown to everyone
+  socket.on('setColor', async (c) => {
+    const now = Date.now();
+    if (!colorOk(c) || now - lastColorChange < 200) return;
+    lastColorChange = now;
+    color = c;
+    if (players[socket.id]) {
+      players[socket.id].c = c;
+      socket.broadcast.emit('serverUpdate', socket.id, players[socket.id]);
+    }
+    try { await store.setColor(key, c); } catch (e) { console.error(e); }
   });
 
   socket.on('disconnect', () => {
