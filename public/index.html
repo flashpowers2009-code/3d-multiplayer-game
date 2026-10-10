@@ -29,6 +29,8 @@ canvas{display:block;width:100%;height:100%}
 #cbtn{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));right:calc(10px + env(safe-area-inset-right,0px));z-index:5;display:none;padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.5);background:rgba(15,23,42,.55);color:#fff;font-size:14px;cursor:pointer}
 #cpanel{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;background:rgba(0,0,0,.35)}
 #cbox{padding:18px 20px;max-width:360px;width:100%;box-sizing:border-box}
+#fsbtn{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));left:calc(10px + env(safe-area-inset-left,0px));z-index:5;display:none;padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.5);background:rgba(15,23,42,.55);color:#fff;font-size:16px;cursor:pointer}
+#toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(56px + env(safe-area-inset-top,0px));z-index:30;display:none;max-width:85%;padding:8px 12px;border-radius:10px;background:rgba(15,23,42,.9);color:#fff;font-size:13px;text-align:center;pointer-events:none}
 </style>
 </head>
 <body>
@@ -52,6 +54,8 @@ canvas{display:block;width:100%;height:100%}
 <div id="swap"><a href="#" id="logout">Log out</a></div>
 </div>
 </div></div>
+<button id="fsbtn" aria-label="Toggle full screen">⛶</button>
+<div id="toast"></div>
 <button id="cbtn">🎨 Color</button>
 <div id="cpanel"><div id="cbox" style="background:rgba(15,23,42,.88);border:1px solid rgba(255,255,255,.2);border-radius:16px;color:#fff;text-align:center">
 <h1>Shirt color</h1><p style="font-size:13px;margin:0 0 12px;opacity:.8">Changes save to your account.</p>
@@ -317,10 +321,7 @@ function connect(token){
     const mouse=e.pointerType==='mouse'&&cv.requestPointerLock;
     if(mouse){try{const r=cv.requestPointerLock();if(r&&r.catch)r.catch(()=>{})}catch(_){}}
     // Phones/tablets: go full screen (must happen inside the tap)
-    if(!mouse&&('ontouchstart' in window||navigator.maxTouchPoints>0)){
-      const el=document.documentElement,rf=el.requestFullscreen||el.webkitRequestFullscreen;
-      if(rf){try{const r=rf.call(el);if(r&&r.catch)r.catch(()=>{})}catch(_){}}
-    }
+    if(!mouse&&isTouchDev())goFullscreen();
     $('play').disabled=true;
     try{await api('/api/color',{color:myColor})}
     catch(err){
@@ -330,6 +331,10 @@ function connect(token){
     started=true;document.getElementById('menu').style.display='none';
     pitch=0;camera.fov=75;camera.updateProjectionMatrix();player.visible=false;
     document.getElementById('xh').style.display='block';document.getElementById('cbtn').style.display='block';
+    if(isTouchDev()){
+      document.getElementById('fsbtn').style.display='block';
+      document.addEventListener('touchend',()=>{if(!fsEl())goFullscreen()},{once:true});
+    }
     connect(token);
   });
 
@@ -343,6 +348,27 @@ function connect(token){
   if(token){api('/api/me',null,'GET').then(showSetup).catch(()=>{token=null;try{localStorage.removeItem('fpsToken')}catch(_){}showAuth()})}
   else showAuth();
 })();
+
+// Full screen helpers (touch devices)
+function isTouchDev(){return 'ontouchstart' in window||navigator.maxTouchPoints>0}
+function fsEl(){return document.fullscreenElement||document.webkitFullscreenElement}
+function toast(msg){
+  const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';
+  clearTimeout(toast.t);toast.t=setTimeout(()=>{t.style.display='none'},5000);
+}
+function goFullscreen(){
+  const el=document.documentElement,rf=el.requestFullscreen||el.webkitRequestFullscreen;
+  if(!rf){toast('This browser does not support full screen.');return}
+  try{
+    const r=rf.call(el);
+    if(r&&r.catch)r.catch(err=>toast('Full screen was blocked ('+((err&&err.name)||'error')+'). Tap the ⛶ button to try again.'));
+  }catch(err){toast('Full screen failed: '+err.message)}
+}
+function toggleFullscreen(){
+  if(fsEl())(document.exitFullscreen||document.webkitExitFullscreen).call(document);
+  else goFullscreen();
+}
+document.getElementById('fsbtn').addEventListener('click',toggleFullscreen);
 
 // In-game shirt color panel (press C, or tap the Color button)
 const cSw=document.getElementById('sw2'),cCc=document.getElementById('cc2');
