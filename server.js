@@ -155,6 +155,21 @@ app.post('/api/color', auth, wrap(async (req, res) => {
 /* ---------- Multiplayer ---------- */
 const players = {};   // socket.id -> { x, y, z, r, c, n }
 const online = new Map(); // account key -> socket
+// ---- Shared reactor core: one temperature everyone sees and can control ----
+const core = { temp: 600, cool: 0.3, by: '' };
+let simT = 0, spike = 0;
+setInterval(() => {
+  if (!online.size) { core.temp = 600; core.cool = 0.3; core.by = ''; spike = 0; return; }
+  const dt = 0.1;
+  simT += dt;
+  if (Math.random() < 0.004) spike = 8 + Math.random() * 10; // occasional heat surge
+  spike *= 0.985;
+  const heat = 12 + 4 * Math.sin(simT / 17) + spike;
+  core.temp += (heat - 30 * core.cool - 0.01 * (core.temp - 300)) * dt;
+  core.temp = Math.max(280, Math.min(1200, core.temp));
+}, 100);
+const coreMsg = () => ({ t: Math.round(core.temp), c: core.cool, by: core.by });
+setInterval(() => { if (online.size) io.emit('core', coreMsg()); }, 250);
 const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
 
 io.use(async (socket, next) => {
@@ -177,6 +192,7 @@ io.on('connection', (socket) => {
   online.set(key, socket);
 
   socket.emit('currentPlayers', players);
+  socket.emit('core', coreMsg());
 
   socket.on('playerMovement', (d) => {
     if (!d || typeof d !== 'object') return;
@@ -190,6 +206,16 @@ io.on('connection', (socket) => {
       n: username,
     };
     socket.broadcast.emit('serverUpdate', socket.id, players[socket.id]);
+  });
+
+  // Adjust the core cooling level (0-100)
+  let lastCool = 0;
+  socket.on('setCooling', (v) => {
+    const now = Date.now();
+    if (typeof v !== 'number' || !isFinite(v) || now - lastCool < 80) return;
+    lastCool = now;
+    core.cool = Math.max(0, Math.min(100, Math.round(v))) / 100;
+    core.by = username;
   });
 
   // Change shirt color any time; saved to the account and shown to everyone
