@@ -156,25 +156,35 @@ app.post('/api/color', auth, wrap(async (req, res) => {
 const players = {};   // socket.id -> { x, y, z, r, c, n }
 const online = new Map(); // account key -> socket
 // ---- Shared reactor core: one temperature everyone sees and controls ----
-// The core always cools by exactly 1 degree C per second. Each heater key that is on adds +2 C/s and
-// each cooler key that is on removes 2 C/s. The net rate is always odd (-1, +1, -3, +3...), so it can
-// never hold steady: workers have to keep switching keys to keep the core in range.
-const core = { temp: 600, cl: [false, false, false, false], ht: [false, false, false, false], by: '' };
+// The core starts at 0 C and always cools by exactly 1 C per second. Each heater key that is on adds +2 C/s and
+// each cooler key that is on removes 2 C/s. The net rate is always odd (-1, +1, -3, +3...), so it can never
+// hold steady. Reaching CODE BLACK (2000 C) blows up the facility; it is rebuilt after 45 seconds.
+const EXPLODE_AT = 2000;
+const REBUILD_MS = 45000;
+const core = { temp: 0, cl: [false, false, false, false], ht: [false, false, false, false], by: '', ex: false };
+let exTimer = null;
 const resetCore = () => {
-  core.temp = 600; core.cl = [false, false, false, false]; core.ht = [false, false, false, false]; core.by = '';
+  clearTimeout(exTimer); exTimer = null;
+  core.temp = 0; core.cl = [false, false, false, false]; core.ht = [false, false, false, false]; core.by = ''; core.ex = false;
 };
 const NATURAL_COOLING = 1;  // degrees C lost per second with everything off
 const HEATER_POWER = 2;     // degrees C per second added by each heater
 const COOLER_POWER = 2;     // degrees C per second removed by each cooler
 setInterval(() => {
   if (!online.size) { resetCore(); return; }
+  if (core.ex) return; // exploded: the simulation is paused until the rebuild
   const dt = 0.1;
   const rate = -NATURAL_COOLING
     + core.ht.filter(Boolean).length * HEATER_POWER
     - core.cl.filter(Boolean).length * COOLER_POWER;
-  core.temp = Math.max(300, Math.min(1200, core.temp + rate * dt));
+  core.temp = Math.max(0, Math.min(EXPLODE_AT, core.temp + rate * dt));
+  if (core.temp >= EXPLODE_AT) {
+    core.ex = true;
+    io.emit('core', coreMsg());
+    exTimer = setTimeout(() => { resetCore(); io.emit('core', coreMsg()); }, REBUILD_MS);
+  }
 }, 100);
-const coreMsg = () => ({ t: Math.round(core.temp), cl: core.cl, ht: core.ht, by: core.by });
+const coreMsg = () => ({ t: Math.round(core.temp), cl: core.cl, ht: core.ht, by: core.by, ex: core.ex });
 setInterval(() => { if (online.size) io.emit('core', coreMsg()); }, 250);
 const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
 
@@ -218,7 +228,7 @@ io.on('connection', (socket) => {
   let lastPress = 0;
   socket.on('pressButton', (d) => {
     const now = Date.now();
-    if (!d || now - lastPress < 120) return;
+    if (!d || core.ex || now - lastPress < 120) return;
     if ((d.type !== 'cool' && d.type !== 'heat') || !Number.isInteger(d.i) || d.i < 0 || d.i > 3) return;
     lastPress = now;
     const arr = d.type === 'cool' ? core.cl : core.ht;
