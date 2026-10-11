@@ -32,6 +32,7 @@ canvas{display:block;width:100%;height:100%}
 #fsbtn{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));left:calc(10px + env(safe-area-inset-left,0px));z-index:5;display:none;padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.5);background:rgba(15,23,42,.55);color:#fff;font-size:16px;cursor:pointer}
 #toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(56px + env(safe-area-inset-top,0px));z-index:30;display:none;max-width:85%;padding:8px 12px;border-radius:10px;background:rgba(15,23,42,.9);color:#fff;font-size:13px;text-align:center;pointer-events:none}
 #aimhint{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(170px + env(safe-area-inset-bottom,0px));z-index:6;display:none;padding:8px 14px;border-radius:999px;background:rgba(15,23,42,.78);border:1px solid rgba(255,255,255,.4);color:#fff;font-size:14px;pointer-events:none;white-space:nowrap}
+#flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:25}
 </style>
 </head>
 <body>
@@ -65,6 +66,7 @@ canvas{display:block;width:100%;height:100%}
 <button id="cdone">Done</button>
 </div></div>
 <div id="aimhint"></div>
+<div id="flash"></div>
 <div id="xh"></div>
 <div id="joy"><div id="knob"></div></div>
 <div id="jump">Jump</div>
@@ -121,27 +123,28 @@ for(let i=0;i<70;i++){
 }
 
 // ===== Compute facility: a multi-room complex around a central core =====
+const facGroup=new THREE.Group();scene.add(facGroup);const facObstStart=obstacles.length;let facCoreGroup=null;
 const FX=0,FZ=-45,boxes=[],facPanels=[],facScreens=[],facAnims=[];
 function fBox(w,h,d,color,x,y,z,collide){
   const mt=typeof color==='number'?new THREE.MeshLambertMaterial({color}):color;
   const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mt);
-  m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;scene.add(m);
+  m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;facGroup.add(m);
   if(collide)boxes.push({x0:x-w/2,x1:x+w/2,z0:z-d/2,z1:z+d/2,h:y+h/2});
   return m;
 }
 const basicM=(color,extra)=>new THREE.MeshBasicMaterial(Object.assign({color},extra||{}));
 const TERM={x:FX-4.6,z:FZ-4.6};
-const coreState={t:600,cl:[false,false,false,false],ht:[false,false,false,false],by:''};
+const coreState={t:0,ex:false,cl:[false,false,false,false],ht:[false,false,false,false],by:''};
 const btnMeshes=[];
 const facReadouts=[];
 function statusOf(T){
-  if(T<450)return{name:'CODE BLUE',col:'#3b82f6'};
-  if(T<750)return{name:'CODE GREEN',col:'#4ade80'};
-  if(T<900)return{name:'CODE YELLOW',col:'#fbbf24'};
-  if(T<1000)return{name:'C0D3_R3D',col:'#ef4444'};
+  if(T<500)return{name:'CODE BLUE',col:'#3b82f6'};
+  if(T<1000)return{name:'CODE GREEN',col:'#4ade80'};
+  if(T<1500)return{name:'CODE YELLOW',col:'#fbbf24'};
+  if(T<2000)return{name:'C0D3_R3D',col:'#ef4444'};
   return{name:'C0D3_8L4CK',col:'#e2e8f0'};
 }
-const CSTOPS=[[300,0x3b82f6],[450,0x3b82f6],[520,0x4ade80],[700,0x4ade80],[780,0xfbbf24],[880,0xfbbf24],[920,0xef4444],[1000,0xef4444]].map(([t,c])=>[t,new THREE.Color(c)]);
+const CSTOPS=[[0,0x3b82f6],[450,0x3b82f6],[550,0x4ade80],[950,0x4ade80],[1050,0xfbbf24],[1450,0xfbbf24],[1550,0xef4444],[2000,0xef4444]].map(([t,c])=>[t,new THREE.Color(c)]);
 function coreColor(T,out){
   if(T<=CSTOPS[0][0])return out.copy(CSTOPS[0][1]);
   for(let i=1;i<CSTOPS.length;i++){const [t1,c1]=CSTOPS[i],[t0,c0]=CSTOPS[i-1];if(T<=t1)return out.copy(c0).lerp(c1,(T-t0)/(t1-t0))}
@@ -156,9 +159,9 @@ function drawReadout(cv,compact){
   x.fillStyle='#94a3b8';x.font=f(.09,true);x.fillText('CORE TEMPERATURE',w*.04,h*.07);
   x.fillStyle=st.col;x.font=f(.34,true);x.fillText(T+' \u00b0C',w*.04,h*.18);
   const bx=w*.04,by=h*.62,bw=w*.92,bh=h*.1,g=x.createLinearGradient(bx,0,bx+bw,0);
-  [[0,'#3b82f6'],[.166,'#3b82f6'],[.167,'#4ade80'],[.499,'#4ade80'],[.5,'#fbbf24'],[.666,'#fbbf24'],[.667,'#ef4444'],[.777,'#ef4444'],[.778,'#000000'],[1,'#000000']].forEach(([o,c])=>g.addColorStop(o,c));
+  [[0,'#3b82f6'],[.249,'#3b82f6'],[.25,'#4ade80'],[.499,'#4ade80'],[.5,'#fbbf24'],[.749,'#fbbf24'],[.75,'#ef4444'],[.995,'#ef4444'],[.996,'#000000'],[1,'#000000']].forEach(([o,c])=>g.addColorStop(o,c));
   x.fillStyle=g;x.fillRect(bx,by,bw,bh);x.strokeStyle='#64748b';x.lineWidth=2;x.strokeRect(bx,by,bw,bh);
-  x.fillStyle='#fff';x.fillRect(bx+bw*Math.max(0,Math.min(1,(T-300)/900))-3,by-6,6,bh+12);
+  x.fillStyle='#fff';x.fillRect(bx+bw*Math.max(0,Math.min(1,T/2000))-3,by-6,6,bh+12);
   x.fillStyle=st.col;x.font=f(.1,true);x.fillText(st.name,w*.04,h*.78);
   x.fillStyle='#94a3b8';x.font=f(.07,false);x.textAlign='right';x.fillText('COOL '+coreState.cl.filter(Boolean).length+'/4 \u00b7 HEAT '+coreState.ht.filter(Boolean).length+'/4',w*.96,h*.8);
   if(compact){x.textAlign='center';x.fillStyle='#64748b';x.fillText('Use the COOL / HEAT keys below',w/2,h*.92)}
@@ -231,12 +234,12 @@ function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compac
                [-30,-10,-22,-10,0x4a4036],[10,30,-22,-10,0x1f3a4a],[-30,-10,10,22,0x374151],[10,30,10,22,0x6b7280]];
   for(const [x0,x1,z0,z1,c] of rooms){
     const f=new THREE.Mesh(new THREE.PlaneGeometry(x1-x0,z1-z0),new THREE.MeshLambertMaterial({color:c}));
-    f.rotation.x=-Math.PI/2;f.position.set(FX+(x0+x1)/2,0.03,FZ+(z0+z1)/2);f.receiveShadow=true;scene.add(f);
+    f.rotation.x=-Math.PI/2;f.position.set(FX+(x0+x1)/2,0.03,FZ+(z0+z1)/2);f.receiveShadow=true;facGroup.add(f);
   }
   // approach pad and entrance bollards
   const pad=new THREE.Mesh(new THREE.PlaneGeometry(24,14),new THREE.MeshLambertMaterial({color:0x4b5563}));
-  pad.rotation.x=-Math.PI/2;pad.position.set(FX,0.025,FZ+29);pad.receiveShadow=true;scene.add(pad);
-  for(const x of [-3,3]){const b=new THREE.Mesh(new THREE.CylinderGeometry(.15,.15,.9,10),basicM(0x22d3ee));b.position.set(FX+x,.45,FZ+25);scene.add(b)}
+  pad.rotation.x=-Math.PI/2;pad.position.set(FX,0.025,FZ+29);pad.receiveShadow=true;facGroup.add(pad);
+  for(const x of [-3,3]){const b=new THREE.Mesh(new THREE.CylinderGeometry(.15,.15,.9,10),basicM(0x22d3ee));b.position.set(FX+x,.45,FZ+25);facGroup.add(b)}
 
   // ---------- helpers ----------
   function sign(text,w,lx,ly,lz,rotY,col){
@@ -244,27 +247,27 @@ function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compac
     x.fillStyle='#0b1220';x.fillRect(0,0,512,97);x.strokeStyle=col;x.lineWidth=4;x.strokeRect(2,2,508,93);
     x.font='bold 54px system-ui,sans-serif';x.textAlign='center';x.textBaseline='middle';x.fillStyle=col;x.fillText(text,256,50,490);
     const m=new THREE.Mesh(new THREE.PlaneGeometry(w,w*97/512),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(c)}));
-    m.position.set(FX+lx,ly,FZ+lz);m.rotation.y=rotY;scene.add(m);
+    m.position.set(FX+lx,ly,FZ+lz);m.rotation.y=rotY;facGroup.add(m);
   }
   function cyl(rt,rb,h,mt,lx,y,lz,cr){
     const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,20),typeof mt==='number'?new THREE.MeshLambertMaterial({color:mt}):mt);
-    m.position.set(FX+lx,y,FZ+lz);m.castShadow=true;m.receiveShadow=true;scene.add(m);
+    m.position.set(FX+lx,y,FZ+lz);m.castShadow=true;m.receiveShadow=true;facGroup.add(m);
     if(cr)obstacles.push({x:FX+lx,z:FZ+lz,r:cr});return m;
   }
   function pipe(len,r,col,lx,y,lz,axis){
     const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,len,10),new THREE.MeshLambertMaterial({color:col}));
     if(axis==='z')m.rotation.x=Math.PI/2;else m.rotation.z=Math.PI/2;
-    m.position.set(FX+lx,y,FZ+lz);m.castShadow=true;scene.add(m);return m;
+    m.position.set(FX+lx,y,FZ+lz);m.castShadow=true;facGroup.add(m);return m;
   }
   let pi=0;
   function rack(lx,lz,face){ // face: +1 lights on the +x side, -1 on the -x side
     B(1.0,2.6,1.4,0x1f242b,lx,1.3,lz,true);
     const p=new THREE.Mesh(new THREE.PlaneGeometry(1.2,2.2),ledMats[pi%2]);
-    p.position.set(FX+lx+face*.52,1.35,FZ+lz);p.rotation.y=face*Math.PI/2;scene.add(p);
+    p.position.set(FX+lx+face*.52,1.35,FZ+lz);p.rotation.y=face*Math.PI/2;facGroup.add(p);
     facPanels.push({m:p,i:pi++});
   }
   function consoleDesk(lx,lz,rotY){
-    const g=new THREE.Group();g.position.set(FX+lx,0,FZ+lz);g.rotation.y=rotY;scene.add(g);
+    const g=new THREE.Group();g.position.set(FX+lx,0,FZ+lz);g.rotation.y=rotY;facGroup.add(g);
     const d=new THREE.Mesh(new THREE.BoxGeometry(2,.9,.8),new THREE.MeshLambertMaterial({color:0x374151}));d.position.y=.45;d.castShadow=true;g.add(d);
     const s=new THREE.Mesh(new THREE.PlaneGeometry(1.5,.75),basicM(0x38bdf8));s.position.set(0,1.3,.06);s.rotation.x=-.25;g.add(s);
     const st=new THREE.Mesh(new THREE.BoxGeometry(.1,.4,.1),new THREE.MeshLambertMaterial({color:0x111827}));st.position.y=1.05;g.add(st);
@@ -273,24 +276,24 @@ function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compac
   function shelf(lx,lz,len,alongX,face){
     if(alongX){
       B(len,2.4,.9,0x3b2f22,lx,1.2,lz,true);
-      const p=new THREE.Mesh(new THREE.PlaneGeometry(len-.1,2.2),shelfMat);p.position.set(FX+lx,1.2,FZ+lz+face*.46);p.rotation.y=face>0?0:Math.PI;scene.add(p);
+      const p=new THREE.Mesh(new THREE.PlaneGeometry(len-.1,2.2),shelfMat);p.position.set(FX+lx,1.2,FZ+lz+face*.46);p.rotation.y=face>0?0:Math.PI;facGroup.add(p);
     }else{
       B(.9,2.4,len,0x3b2f22,lx,1.2,lz,true);
-      const p=new THREE.Mesh(new THREE.PlaneGeometry(len-.1,2.2),shelfMat);p.position.set(FX+lx+face*.46,1.2,FZ+lz);p.rotation.y=face>0?Math.PI/2:-Math.PI/2;scene.add(p);
+      const p=new THREE.Mesh(new THREE.PlaneGeometry(len-.1,2.2),shelfMat);p.position.set(FX+lx+face*.46,1.2,FZ+lz);p.rotation.y=face>0?Math.PI/2:-Math.PI/2;facGroup.add(p);
     }
   }
   function plant(lx,lz){
     cyl(.4,.3,.5,0x7c4a2d,lx,.25,lz,.45);
     const l=new THREE.Mesh(new THREE.ConeGeometry(.55,1.5,8),new THREE.MeshLambertMaterial({color:0x2f7d32}));
-    l.position.set(FX+lx,1.25,FZ+lz);l.castShadow=true;scene.add(l);
+    l.position.set(FX+lx,1.25,FZ+lz);l.castShadow=true;facGroup.add(l);
   }
-  function strip(lx,lz,w,d,y){const m=new THREE.Mesh(new THREE.BoxGeometry(w,.06,d),basicM(0xf8fafc));m.position.set(FX+lx,y,FZ+lz);scene.add(m)}
+  function strip(lx,lz,w,d,y){const m=new THREE.Mesh(new THREE.BoxGeometry(w,.06,d),basicM(0xf8fafc));m.position.set(FX+lx,y,FZ+lz);facGroup.add(m)}
 
   // ---------- entrance sign ----------
   sign('COMPUTE CORE',3.6,0,4.25,22.32,0,'#22d3ee');
 
   // ---------- CORE HALL (center) ----------
-  const core=new THREE.Group();core.position.set(FX,0,FZ);scene.add(core);
+  const core=new THREE.Group();core.position.set(FX,0,FZ);facGroup.add(core);facCoreGroup=core;
   const ped=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.7,.5,24),new THREE.MeshLambertMaterial({color:0x1e293b}));
   ped.position.y=.25;ped.castShadow=true;ped.receiveShadow=true;core.add(ped);
   const orb=new THREE.Mesh(new THREE.IcosahedronGeometry(.7,1),basicM(0x22d3ee));orb.position.y=3;core.add(orb);
@@ -304,20 +307,27 @@ function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compac
     r.rotation.x=-Math.PI/2;r.position.y=.06;core.add(r);
   }
   const coreLight=new THREE.PointLight(0x22d3ee,1.3,26);coreLight.position.y=3;core.add(coreLight);
-  obstacles.push({x:FX,z:FZ,r:1.6});
+  // glass enclosure around the core: solid, so nobody can get close to it
+  const glassMat=new THREE.MeshPhongMaterial({color:0x9be7ff,transparent:true,opacity:.16,shininess:90,side:THREE.DoubleSide,depthWrite:false});
+  const glass=new THREE.Mesh(new THREE.CylinderGeometry(2.6,2.6,6.4,48,1,true),glassMat);glass.position.y=3.3;core.add(glass);
+  const glassCap=new THREE.Mesh(new THREE.CircleGeometry(2.6,48),glassMat);glassCap.rotation.x=-Math.PI/2;glassCap.position.y=6.5;core.add(glassCap);
+  const frameM=new THREE.MeshLambertMaterial({color:0x334155});
+  for(const y of [.1,6.5]){const r=new THREE.Mesh(new THREE.TorusGeometry(2.6,.09,8,48),frameM);r.rotation.x=Math.PI/2;r.position.y=y;core.add(r)}
+  for(let i=0;i<8;i++){const a=i/8*Math.PI*2,bar=new THREE.Mesh(new THREE.BoxGeometry(.12,6.4,.12),frameM);bar.position.set(Math.cos(a)*2.6,3.3,Math.sin(a)*2.6);core.add(bar)}
+  obstacles.push({x:FX,z:FZ,r:2.4});
   const hallStripMat=basicM(0xf8fafc);
-  for(const x of [-5,5]){const m=new THREE.Mesh(new THREE.BoxGeometry(.5,.06,12),hallStripMat);m.position.set(FX+x,8.9,FZ);scene.add(m)}
+  for(const x of [-5,5]){const m=new THREE.Mesh(new THREE.BoxGeometry(.5,.06,12),hallStripMat);m.position.set(FX+x,8.9,FZ);facGroup.add(m)}
   sign('CORE HALL',4,-6,6.6,-9.68,0,'#22d3ee');
   // big temperature readout on the hall's north wall
   const wallCv=cvs(640,240),wallTex=new THREE.CanvasTexture(wallCv);
   const wallMesh=new THREE.Mesh(new THREE.PlaneGeometry(6.4,2.4),new THREE.MeshBasicMaterial({map:wallTex}));
-  wallMesh.position.set(FX+6,5.2,FZ-9.68);scene.add(wallMesh);
+  wallMesh.position.set(FX+6,5.2,FZ-9.68);facGroup.add(wallMesh);
   facReadouts.push({cv:wallCv,tex:wallTex,compact:false});
 
   // the core control terminal
   const termCv=cvs(512,320),termTex=new THREE.CanvasTexture(termCv);
   facReadouts.push({cv:termCv,tex:termTex,compact:true});
-  const tg=new THREE.Group();tg.position.set(TERM.x,0,TERM.z);tg.rotation.y=Math.PI/4;scene.add(tg);
+  const tg=new THREE.Group();tg.position.set(TERM.x,0,TERM.z);tg.rotation.y=Math.PI/4;facGroup.add(tg);
   const dark=c=>new THREE.MeshLambertMaterial({color:c});
   const desk=new THREE.Mesh(new THREE.BoxGeometry(3,.9,1),dark(0x374151));desk.position.y=.45;desk.castShadow=true;tg.add(desk);
   const frame=new THREE.Mesh(new THREE.BoxGeometry(2.8,1.7,.12),dark(0x111827));frame.position.set(0,1.85,-.2);frame.rotation.x=-.2;tg.add(frame);
@@ -359,9 +369,9 @@ function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compac
   facAnims.push(t=>{
     const dt=Math.min(.1,Math.max(0,t-lastT));lastT=t;
     dispT+=(coreState.t-dispT)*Math.min(1,dt*5);
-    const k=Math.max(0,Math.min(1,(dispT-300)/900));
+    const k=Math.max(0,Math.min(1,dispT/2000));
     coreColor(dispT,cTmp);
-    if(coreState.t>=1000)cTmp.set(Math.floor(t*5)%2===0?0x000000:0xff2a2a);
+    if(coreState.t>=2000)cTmp.set(Math.floor(t*5)%2===0?0x000000:0xff2a2a);
     orb.material.color.copy(cTmp);cage.material.color.copy(cTmp).lerp(white,.45);
     rings.forEach(r=>r.material.color.copy(cTmp));up.material.color.copy(cTmp);dn.material.color.copy(cTmp);
     decals.forEach(d=>d.material.color.copy(cTmp));coreLight.color.copy(cTmp);
@@ -371,7 +381,7 @@ function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compac
     const pulse=Math.sin(t*(3+k*9));
     orb.scale.setScalar(1+pulse*(.06+.1*k));
     coreLight.intensity=1+k+pulse*.3;
-    hallStripMat.color.set(coreState.t>=900&&Math.floor(t*2.5)%2===0?0xff3b3b:0xf8fafc);
+    hallStripMat.color.set(coreState.t>=1500&&Math.floor(t*2.5)%2===0?0xff3b3b:0xf8fafc);
   });
 
   // ---------- LOBBY (south) ----------
@@ -386,12 +396,12 @@ function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compac
   let si=0;
   for(const y of [1.9,3.6])for(const x of [-7.2,-3.6,0,3.6,7.2]){
     const s=new THREE.Mesh(new THREE.PlaneGeometry(3.3,1.5),facScreens.mats[si%3]);
-    s.position.set(FX+x,y,FZ-21.48);scene.add(s);facScreens.push({m:s,i:si++});
+    s.position.set(FX+x,y,FZ-21.48);facGroup.add(s);facScreens.push({m:s,i:si++});
   }
   for(const z of [-14.5,-18])for(const x of [-6.5,-3.5,3.5,6.5])consoleDesk(x,z,0);
   sign('CONTROL ROOM',4.6,0,4.55,-21.68,0,'#60a5fa');
   strip(-4,-16,.5,10,4.95);strip(4,-16,.5,10,4.95);
-  const ctlLight=new THREE.PointLight(0x60a5fa,.8,18);ctlLight.position.set(FX,3.8,FZ-16);scene.add(ctlLight);
+  const ctlLight=new THREE.PointLight(0x60a5fa,.8,18);ctlLight.position.set(FX,3.8,FZ-16);facGroup.add(ctlLight);
 
   // ---------- SERVER HALL (west) ----------
   for(const z of [-6,-3.6,-1.2,1.2,3.6,6]){rack(-27.6,z,1);rack(-24.4,z,-1)}
@@ -409,7 +419,7 @@ function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compac
   pipe(18,.18,0x9a6b3a,29,3.8,0,'z');pipe(10,.18,0x9a6b3a,24,3.8,-9,'x');
   sign('POWER ROOM',4,29.68,4.3,-6,-Math.PI/2,'#fb923c');
   strip(15,0,.5,16,4.95);strip(26,0,.5,16,4.95);
-  const powLight=new THREE.PointLight(0xff9a3c,.9,18);powLight.position.set(FX+24,3.4,FZ);scene.add(powLight);
+  const powLight=new THREE.PointLight(0xff9a3c,.9,18);powLight.position.set(FX+24,3.4,FZ);facGroup.add(powLight);
   facAnims.push(t=>{const k=.55+.45*Math.sin(t*2.2);bandMat.color.setRGB(1*k,.6*k,.24*k);powLight.intensity=.7+.3*k});
 
   // ---------- ARCHIVE (north-west) ----------
@@ -431,9 +441,9 @@ function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compac
 
   // ---------- LAB (south-west) ----------
   B(3,1,1.1,0x9a7b4f,-27,.5,21,true);B(3,1,1.1,0x9a7b4f,-23,.5,21,true);B(1.1,1,3,0x9a7b4f,-29,.5,13.5,true);
-  for(const x of [-27.5,-23.5]){const m=new THREE.Mesh(new THREE.PlaneGeometry(.9,.55),basicM(0x4ade80));m.position.set(FX+x,1.35,FZ+20.6);scene.add(m)}
+  for(const x of [-27.5,-23.5]){const m=new THREE.Mesh(new THREE.PlaneGeometry(.9,.55),basicM(0x4ade80));m.position.set(FX+x,1.35,FZ+20.6);facGroup.add(m)}
   cyl(1,1.1,.9,0x374151,-25,.45,15.5,1.2);cyl(.9,.9,.05,basicM(0x22d3ee),-25,.93,15.5,0);
-  const holo=new THREE.Mesh(new THREE.OctahedronGeometry(.6),basicM(0x67e8f9,{wireframe:true}));holo.position.set(FX-25,1.9,FZ+15.5);scene.add(holo);
+  const holo=new THREE.Mesh(new THREE.OctahedronGeometry(.6),basicM(0x67e8f9,{wireframe:true}));holo.position.set(FX-25,1.9,FZ+15.5);facGroup.add(holo);
   sign('LAB',2.4,-29.68,4.3,16,Math.PI/2,'#a78bfa');
   strip(-20,16,.5,10,4.95);
   facAnims.push(t=>{holo.rotation.y=t*.9;holo.rotation.x=t*.5;holo.position.y=1.9+Math.sin(t*2)*.1});
@@ -441,7 +451,7 @@ function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compac
   // ---------- OFFICES (south-east) ----------
   for(const z of [13,17.5,21]){
     B(1,.9,2.2,0x9ca3af,28.6,.45,z,true);B(.6,.6,.6,0x374151,27.4,.3,z,false);
-    const m=new THREE.Mesh(new THREE.PlaneGeometry(1,.6),basicM(0x38bdf8));m.position.set(FX+28.4,1.3,FZ+z);m.rotation.y=-Math.PI/2;scene.add(m);
+    const m=new THREE.Mesh(new THREE.PlaneGeometry(1,.6),basicM(0x38bdf8));m.position.set(FX+28.4,1.3,FZ+z);m.rotation.y=-Math.PI/2;facGroup.add(m);
   }
   cyl(1.3,1.3,.8,0x9a7b4f,16,.4,20.3,1.4);
   plant(11.5,11.5);plant(29,11);
@@ -451,7 +461,7 @@ function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compac
   // ---------- rooftop: vents and a blinking antenna ----------
   for(const [x,z] of [[-20,0],[20,5],[-18,-16],[18,17],[-22,16]])B(2.2,1.2,2.2,0x9ca3af,x,6,z,false);
   const mast=cyl(.08,.08,7,0x9ca3af,24,8.9,-18,0);
-  const tip=new THREE.Mesh(new THREE.SphereGeometry(.16,10,8),basicM(0xef4444));tip.position.set(FX+24,12.5,FZ-18);scene.add(tip);
+  const tip=new THREE.Mesh(new THREE.SphereGeometry(.16,10,8),basicM(0xef4444));tip.position.set(FX+24,12.5,FZ-18);facGroup.add(tip);
   facAnims.push(t=>{tip.visible=Math.floor(t*1.5)%2===0});
 })();
 function facilityTick(t){
@@ -702,6 +712,113 @@ function connect(token){
   else showAuth();
 })();
 
+// ===== Explosion: reaching CODE BLACK destroys the facility; it is rebuilt later =====
+const exFx={active:false,t0:0,fire:null,ring:null,pts:null,vel:null,smoke:[],flames:[],light:null,orig:null,boxesOrig:null,obstOrig:null};
+const flashEl=document.getElementById('flash');
+function radialTex(inner,outer){
+  const c=document.createElement('canvas');c.width=c.height=128;const x=c.getContext('2d');
+  const g=x.createRadialGradient(64,64,0,64,64,64);g.addColorStop(0,inner);g.addColorStop(1,outer);
+  x.fillStyle=g;x.fillRect(0,0,128,128);return new THREE.CanvasTexture(c);
+}
+const smokeTex=radialTex('rgba(55,55,55,.95)','rgba(55,55,55,0)'),fireTex=radialTex('rgba(255,210,90,1)','rgba(255,70,0,0)');
+function insideFacility(){return Math.abs(player.position.x-FX)<31&&Math.abs(player.position.z-FZ)<23}
+function throwOut(){player.position.set(FX+(Math.random()-.5)*10,0,FZ+32);vel.set(0,0,0)}
+function initExplosion(){
+  exFx.orig=facGroup.children.map(m=>{
+    const b=new THREE.Box3().setFromObject(m),sz=b.isEmpty()?new THREE.Vector3():b.getSize(new THREE.Vector3());
+    return{m,p:m.position.clone(),r:m.rotation.clone(),s:m.scale.clone(),vis:m.visible,size:Math.max(sz.x,sz.y,sz.z),sy:sz.y,col:(m.material&&m.material.color&&!m.material.map)?m.material.color.getHex():undefined};
+  });
+  exFx.boxesOrig=boxes.slice();exFx.obstOrig=obstacles.slice(facObstStart);
+  exFx.light=new THREE.PointLight(0xffaa55,0,160);exFx.light.position.set(FX,8,FZ);scene.add(exFx.light);
+}
+function explodeFacility(){
+  if(exFx.active||!exFx.orig)return;
+  exFx.active=true;exFx.t0=performance.now()/1000;
+  boxes.length=0;obstacles.length=facObstStart; // the walls are gone
+  for(const o of exFx.orig){
+    const m=o.m;
+    if(m.isLight||m===facCoreGroup){m.visible=false;continue}
+    if(o.sy<.05){if(o.col!==undefined)m.material.color.setHex(0x1b1b1b);continue} // floors stay, scorched
+    const dx=m.position.x-FX,dz=m.position.z-FZ,d=Math.hypot(dz,dx)||1,big=o.size>8;
+    const sp=big?(5+Math.random()*5):(10+Math.random()*16+Math.max(0,30-d)*.35),spin=big?.35:5;
+    m.userData.v=new THREE.Vector3(dx/d*sp+(Math.random()-.5)*4,big?(8+Math.random()*6):(7+Math.random()*16),dz/d*sp+(Math.random()-.5)*4);
+    m.userData.w=new THREE.Vector3((Math.random()-.5)*spin,(Math.random()-.5)*spin,(Math.random()-.5)*spin);
+    m.userData.rest=m.isGroup?.05:Math.max(.05,o.sy*(big?.2:.5));
+    m.userData.fly=true;
+  }
+  const fb=new THREE.Mesh(new THREE.SphereGeometry(1,24,16),new THREE.MeshBasicMaterial({color:0xff8a1f,transparent:true,opacity:1,depthWrite:false}));
+  fb.position.set(FX,3,FZ);scene.add(fb);exFx.fire=fb;
+  const rg=new THREE.Mesh(new THREE.RingGeometry(.9,1.3,64),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.9,side:THREE.DoubleSide,depthWrite:false}));
+  rg.rotation.x=-Math.PI/2;rg.position.set(FX,.3,FZ);scene.add(rg);exFx.ring=rg;
+  const N=400,pos=new Float32Array(N*3),pv=new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    pos[i*3]=FX;pos[i*3+1]=3;pos[i*3+2]=FZ;
+    const a=Math.random()*Math.PI*2,e=Math.random()*1.2,sp=10+Math.random()*30;
+    pv[i*3]=Math.cos(a)*Math.cos(e)*sp;pv[i*3+1]=Math.sin(e)*sp+4;pv[i*3+2]=Math.sin(a)*Math.cos(e)*sp;
+  }
+  const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  exFx.pts=new THREE.Points(pg,new THREE.PointsMaterial({color:0xffc060,size:.7,transparent:true,opacity:1,blending:THREE.AdditiveBlending,depthWrite:false}));
+  exFx.pts.frustumCulled=false;scene.add(exFx.pts);exFx.vel=pv;
+  exFx.smoke=[];exFx.flames=[];
+  for(let i=0;i<22;i++){
+    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:smokeTex,transparent:true,opacity:0,depthWrite:false,fog:false}));
+    sp.position.set(FX+(Math.random()-.5)*26,2+Math.random()*3,FZ+(Math.random()-.5)*20);
+    sp.userData={d:Math.random()*2.5,rise:1+Math.random()*1.5,s0:5+Math.random()*4};scene.add(sp);exFx.smoke.push(sp);
+  }
+  for(let i=0;i<12;i++){
+    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:fireTex,transparent:true,opacity:0,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
+    sp.position.set(FX+(Math.random()-.5)*34,1.2,FZ+(Math.random()-.5)*26);
+    sp.userData={s0:3+Math.random()*3,ph:Math.random()*6};scene.add(sp);exFx.flames.push(sp);
+  }
+  exFx.light.intensity=14;flashEl.style.opacity=1;
+  if(insideFacility())throwOut();
+  toast('C0D3_8L4CK \u2014 the core exploded and the facility was destroyed!');
+}
+function explosionTick(dt){
+  if(!exFx.active)return;
+  const tt=performance.now()/1000-exFx.t0;
+  for(const o of exFx.orig){
+    const m=o.m,u=m.userData;if(!u.fly)continue;
+    u.v.y-=22*dt;m.position.addScaledVector(u.v,dt);
+    m.rotation.x+=u.w.x*dt;m.rotation.y+=u.w.y*dt;m.rotation.z+=u.w.z*dt;
+    if(m.position.y<=u.rest){m.position.y=u.rest;u.v.set(0,0,0);u.w.set(0,0,0);u.fly=false}
+  }
+  if(exFx.fire){const k=tt/1.3;if(k>=1){scene.remove(exFx.fire);exFx.fire=null}else{exFx.fire.scale.setScalar(1+tt*20);exFx.fire.material.opacity=1-k}}
+  if(exFx.ring){const k=tt/1.6;if(k>=1){scene.remove(exFx.ring);exFx.ring=null}else{exFx.ring.scale.setScalar(1+tt*55);exFx.ring.material.opacity=.9*(1-k)}}
+  if(exFx.pts){
+    const pa=exFx.pts.geometry.attributes.position.array,pv=exFx.vel;
+    for(let i=0;i<pa.length;i+=3){
+      pv[i+1]-=18*dt;pa[i]+=pv[i]*dt;pa[i+1]+=pv[i+1]*dt;pa[i+2]+=pv[i+2]*dt;
+      if(pa[i+1]<.1){pa[i+1]=.1;pv[i]=pv[i+1]=pv[i+2]=0}
+    }
+    exFx.pts.geometry.attributes.position.needsUpdate=true;exFx.pts.material.opacity=Math.max(0,1-tt/6);
+  }
+  for(const sp of exFx.smoke){
+    const u=sp.userData,t1=tt-u.d;if(t1<=0)continue;
+    sp.material.opacity=Math.min(.6,t1*.6)*Math.max(.3,1-tt/70);
+    sp.scale.setScalar(u.s0+t1*.6);sp.position.y+=u.rise*dt;
+  }
+  for(const sp of exFx.flames){
+    const u=sp.userData;if(tt<.4)continue;
+    const f=1+.25*Math.sin(tt*9+u.ph);sp.material.opacity=.55*f;sp.scale.setScalar(u.s0*f);
+  }
+  exFx.light.intensity=Math.max(0,14*(1-tt/2));
+  flashEl.style.opacity=Math.max(0,1-tt/1.3);
+}
+function rebuildFacility(){
+  if(!exFx.active)return;
+  exFx.active=false;
+  for(const o of exFx.orig){const m=o.m;m.position.copy(o.p);m.rotation.copy(o.r);m.scale.copy(o.s);m.visible=o.vis;m.userData.fly=false;if(o.col!==undefined&&o.sy<.05)m.material.color.setHex(o.col)}
+  for(const k of ['fire','ring','pts']){if(exFx[k]){scene.remove(exFx[k]);exFx[k]=null}}
+  for(const sp of exFx.smoke)scene.remove(sp);for(const sp of exFx.flames)scene.remove(sp);
+  exFx.smoke=[];exFx.flames=[];exFx.light.intensity=0;flashEl.style.opacity=0;
+  boxes.push(...exFx.boxesOrig);obstacles.push(...exFx.obstOrig);
+  if(insideFacility())throwOut();
+  toast('The facility has been rebuilt.');
+}
+function shakeAmt(){return exFx.active?Math.max(0,1-(performance.now()/1000-exFx.t0)/3.5)*.4:0}
+initExplosion();
+
 // Core buttons: aim + press (E / click on desktop, tap on touch)
 const ray=new THREE.Raycaster();ray.far=5;
 let aimBtn=null;
@@ -721,7 +838,7 @@ function updateButtons(){
 }
 function aimCheck(){
   let txt='';aimBtn=null;
-  if(started&&!paused){
+  if(started&&!paused&&!exFx.active){
     if(!isTouchDev()){
       aimBtn=pickButton(0,0);
       if(aimBtn){const u=aimBtn.userData;txt=u.label+': '+(btnOn(u)?'ON':'OFF')+'  \u2022  E / click to switch'}
@@ -735,7 +852,9 @@ function aimCheck(){
   for(const m of btnMeshes)m.scale.y=now-m.userData.pressT<160?.35:1;
 }
 function onCore(c){
-  coreState.t=c.t;coreState.cl=c.cl||coreState.cl;coreState.ht=c.ht||coreState.ht;coreState.by=c.by||'';
+  coreState.t=c.t;coreState.cl=c.cl||coreState.cl;coreState.ht=c.ht||coreState.ht;coreState.by=c.by||'';coreState.ex=!!c.ex;
+  if(c.ex&&!exFx.active)explodeFacility();
+  if(!c.ex&&exFx.active)rebuildFacility();
   drawAllReadouts();updateButtons();
   if(facReadouts.lamp)facReadouts.lamp.color.set(statusOf(c.t).col);
 }
@@ -843,6 +962,7 @@ function tick(){
   animChar(player,walkT,moving,!onGround);
   sendPresence(dt,moving);
   facilityTick(performance.now()/1000);
+  explosionTick(dt);
   updateRemotes(dt);
   // camera
   const tx=player.position.x,tz=player.position.z;
@@ -850,6 +970,7 @@ function tick(){
     // first-person: camera at eye height, looking where you aim
     camera.position.set(tx,player.position.y+1.85,tz);
     camera.rotation.set(pitch,yaw,0);
+    const sk=shakeAmt();if(sk){camera.position.x+=(Math.random()-.5)*sk;camera.position.y+=(Math.random()-.5)*sk;camera.rotation.z=(Math.random()-.5)*sk*.12}
   }else{
     // menu: slow orbit around the character
     yaw+=dt*0.6;
