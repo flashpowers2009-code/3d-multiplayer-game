@@ -135,13 +135,13 @@ const coreState={t:600,cl:[false,false,false,false],ht:[false,false,false,false]
 const btnMeshes=[];
 const facReadouts=[];
 function statusOf(T){
-  if(T<450)return{name:'COLD',col:'#3b82f6'};
-  if(T<750)return{name:'NORMAL',col:'#22d3ee'};
-  if(T<900)return{name:'WARNING',col:'#fbbf24'};
-  if(T<1000)return{name:'DANGER',col:'#f97316'};
-  return{name:'CRITICAL',col:'#ef4444'};
+  if(T<450)return{name:'CODE BLUE',col:'#3b82f6'};
+  if(T<750)return{name:'CODE GREEN',col:'#4ade80'};
+  if(T<900)return{name:'CODE YELLOW',col:'#fbbf24'};
+  if(T<1000)return{name:'C0D3_R3D',col:'#ef4444'};
+  return{name:'C0D3_8L4CK',col:'#e2e8f0'};
 }
-const CSTOPS=[[300,0x3b82f6],[500,0x22d3ee],[700,0x22d3ee],[800,0xfbbf24],[900,0xf97316],[1000,0xef4444]].map(([t,c])=>[t,new THREE.Color(c)]);
+const CSTOPS=[[300,0x3b82f6],[450,0x3b82f6],[520,0x4ade80],[700,0x4ade80],[780,0xfbbf24],[880,0xfbbf24],[920,0xef4444],[1000,0xef4444]].map(([t,c])=>[t,new THREE.Color(c)]);
 function coreColor(T,out){
   if(T<=CSTOPS[0][0])return out.copy(CSTOPS[0][1]);
   for(let i=1;i<CSTOPS.length;i++){const [t1,c1]=CSTOPS[i],[t0,c0]=CSTOPS[i-1];if(T<=t1)return out.copy(c0).lerp(c1,(T-t0)/(t1-t0))}
@@ -156,11 +156,11 @@ function drawReadout(cv,compact){
   x.fillStyle='#94a3b8';x.font=f(.09,true);x.fillText('CORE TEMPERATURE',w*.04,h*.07);
   x.fillStyle=st.col;x.font=f(.34,true);x.fillText(T+' \u00b0C',w*.04,h*.18);
   const bx=w*.04,by=h*.62,bw=w*.92,bh=h*.1,g=x.createLinearGradient(bx,0,bx+bw,0);
-  [[0,'#3b82f6'],[.17,'#22d3ee'],[.5,'#22d3ee'],[.6,'#fbbf24'],[.67,'#f97316'],[.78,'#ef4444'],[1,'#ef4444']].forEach(([o,c])=>g.addColorStop(o,c));
-  x.fillStyle=g;x.fillRect(bx,by,bw,bh);
+  [[0,'#3b82f6'],[.166,'#3b82f6'],[.167,'#4ade80'],[.499,'#4ade80'],[.5,'#fbbf24'],[.666,'#fbbf24'],[.667,'#ef4444'],[.777,'#ef4444'],[.778,'#000000'],[1,'#000000']].forEach(([o,c])=>g.addColorStop(o,c));
+  x.fillStyle=g;x.fillRect(bx,by,bw,bh);x.strokeStyle='#64748b';x.lineWidth=2;x.strokeRect(bx,by,bw,bh);
   x.fillStyle='#fff';x.fillRect(bx+bw*Math.max(0,Math.min(1,(T-300)/900))-3,by-6,6,bh+12);
-  x.fillStyle=st.col;x.font=f(.11,true);x.fillText(st.name,w*.04,h*.78);
-  x.fillStyle='#94a3b8';x.font=f(.075,false);x.textAlign='right';x.fillText('COOL '+coreState.cl.filter(Boolean).length+'/4 \u00b7 HEAT '+coreState.ht.filter(Boolean).length+'/4',w*.96,h*.8);
+  x.fillStyle=st.col;x.font=f(.1,true);x.fillText(st.name,w*.04,h*.78);
+  x.fillStyle='#94a3b8';x.font=f(.07,false);x.textAlign='right';x.fillText('COOL '+coreState.cl.filter(Boolean).length+'/4 \u00b7 HEAT '+coreState.ht.filter(Boolean).length+'/4',w*.96,h*.8);
   if(compact){x.textAlign='center';x.fillStyle='#64748b';x.fillText('Use the COOL / HEAT keys below',w/2,h*.92)}
 }
 function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compact);r.tex.needsUpdate=true}}
@@ -360,7 +360,7 @@ function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compac
     dispT+=(coreState.t-dispT)*Math.min(1,dt*5);
     const k=Math.max(0,Math.min(1,(dispT-300)/900));
     coreColor(dispT,cTmp);
-    if(coreState.t>=1000&&Math.floor(t*5)%2===0)cTmp.lerp(white,.6);
+    if(coreState.t>=1000)cTmp.set(Math.floor(t*5)%2===0?0x000000:0xff2a2a);
     orb.material.color.copy(cTmp);cage.material.color.copy(cTmp).lerp(white,.45);
     rings.forEach(r=>r.material.color.copy(cTmp));up.material.color.copy(cTmp);dn.material.color.copy(cTmp);
     decals.forEach(d=>d.material.color.copy(cTmp));coreLight.color.copy(cTmp);
