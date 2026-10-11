@@ -163,16 +163,7 @@ function drawReadout(cv,compact){
   x.fillStyle='#94a3b8';x.font=f(.07,false);x.textAlign='right';x.fillText('COOL '+coreState.cl.filter(Boolean).length+'/4 \u00b7 HEAT '+coreState.ht.filter(Boolean).length+'/4',w*.96,h*.8);
   if(compact){x.textAlign='center';x.fillStyle='#64748b';x.fillText('Use the COOL / HEAT keys below',w/2,h*.92)}
 }
-function drawCodeLabel(cv){
-  const x=cv.getContext('2d'),w=cv.width,h=cv.height,st=statusOf(coreState.t);
-  x.clearRect(0,0,w,h);
-  x.fillStyle='rgba(5,11,20,.78)';x.fillRect(0,0,w,h);
-  x.strokeStyle=st.col;x.lineWidth=5;x.strokeRect(3,3,w-6,h-6);
-  x.textAlign='center';x.textBaseline='middle';
-  x.fillStyle=st.col;x.font='bold '+Math.round(h*.44)+'px system-ui,sans-serif';x.fillText(st.name,w/2,h*.37,w-24);
-  x.fillStyle='#e2e8f0';x.font='bold '+Math.round(h*.28)+'px system-ui,sans-serif';x.fillText(coreState.t+' \u00b0C',w/2,h*.79);
-}
-function drawAllReadouts(){for(const r of facReadouts){if(r.draw)r.draw(r.cv);else drawReadout(r.cv,r.compact);r.tex.needsUpdate=true}}
+function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compact);r.tex.needsUpdate=true}}
 (function(){
   const T=0.6,WC=0xb8bec7;
   const B=(w,h,d,c,lx,y,lz,col)=>fBox(w,h,d,c,FX+lx,y,FZ+lz,col);
@@ -338,11 +329,6 @@ function drawAllReadouts(){for(const r of facReadouts){if(r.draw)r.draw(r.cv);el
   facReadouts.lamp=lampMat;
   obstacles.push({x:TERM.x,z:TERM.z,r:1.5});
 
-  // floating code label above the core
-  const lblCv=cvs(512,160),lblTex=new THREE.CanvasTexture(lblCv);
-  const lbl=new THREE.Sprite(new THREE.SpriteMaterial({map:lblTex,transparent:true,depthWrite:false,fog:false}));
-  lbl.scale.set(4.6,1.44,1);lbl.position.set(FX,5.4,FZ);scene.add(lbl);
-  facReadouts.push({cv:lblCv,tex:lblTex,draw:drawCodeLabel});
   drawAllReadouts();
 
   // the 8 control keys on the terminal keyboard: 4 coolers (blue) and 4 heaters (red)
