@@ -226,6 +226,7 @@ io.on('connection', (socket) => {
       y: Math.max(0, Math.min(50, num(d.y))),
       z: Math.max(-100, Math.min(100, num(d.z))),
       r: num(d.r),
+      dd: d.dd ? 1 : 0, // 1 while the player is dead (others hide their body)
       c: color,
       n: username,
     };
