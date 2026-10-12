@@ -160,11 +160,12 @@ const online = new Map(); // account key -> socket
 // each cooler key that is on removes 2 C/s. The net rate is always odd (-1, +1, -3, +3...), so it can never
 // hold steady. Reaching CODE BLACK (2500 C) blows up the facility; it is rebuilt after 45 seconds.
 const EXPLODE_AT = 2500;
+const EVAC_MS = 30000;      // time to evacuate once CODE BLACK is reached
 const REBUILD_MS = 45000;
-const core = { temp: 0, cl: [false, false, false, false], ht: [false, false, false, false], by: '', ex: false };
-let exTimer = null;
+const core = { temp: 0, cl: [false, false, false, false], ht: [false, false, false, false], by: '', ex: false, melt: false, meltAt: 0 };
+let exTimer = null, evacTimer = null;
 const resetCore = () => {
-  clearTimeout(exTimer); exTimer = null;
+  clearTimeout(exTimer); exTimer = null; clearTimeout(evacTimer); evacTimer = null; core.melt = false;
   core.temp = 0; core.cl = [false, false, false, false]; core.ht = [false, false, false, false]; core.by = ''; core.ex = false;
 };
 const NATURAL_COOLING = 1;  // degrees C lost per second with everything off
@@ -172,19 +173,26 @@ const HEATER_POWER = 2;     // degrees C per second added by each heater
 const COOLER_POWER = 2;     // degrees C per second removed by each cooler
 setInterval(() => {
   if (!online.size) { resetCore(); return; }
-  if (core.ex) return; // exploded: the simulation is paused until the rebuild
+  if (core.ex || core.melt) return; // evacuation countdown or exploded: the simulation is paused
   const dt = 0.1;
   const rate = -NATURAL_COOLING
     + core.ht.filter(Boolean).length * HEATER_POWER
     - core.cl.filter(Boolean).length * COOLER_POWER;
   core.temp = Math.max(0, Math.min(EXPLODE_AT, core.temp + rate * dt));
   if (core.temp >= EXPLODE_AT) {
-    core.ex = true;
+    // CODE BLACK: the meltdown can't be stopped. Players get EVAC_MS to get out, then the facility explodes.
+    core.melt = true;
+    core.meltAt = Date.now() + EVAC_MS;
     io.emit('core', coreMsg());
-    exTimer = setTimeout(() => { resetCore(); io.emit('core', coreMsg()); }, REBUILD_MS);
+    evacTimer = setTimeout(() => {
+      core.melt = false;
+      core.ex = true;
+      io.emit('core', coreMsg());
+      exTimer = setTimeout(() => { resetCore(); io.emit('core', coreMsg()); }, REBUILD_MS);
+    }, EVAC_MS);
   }
 }, 100);
-const coreMsg = () => ({ t: Math.round(core.temp), cl: core.cl, ht: core.ht, by: core.by, ex: core.ex });
+const coreMsg = () => ({ t: Math.round(core.temp), cl: core.cl, ht: core.ht, by: core.by, ex: core.ex, cd: core.melt ? Math.max(0, Math.ceil((core.meltAt - Date.now()) / 1000)) : 0 });
 setInterval(() => { if (online.size) io.emit('core', coreMsg()); }, 250);
 const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
 
@@ -228,7 +236,7 @@ io.on('connection', (socket) => {
   let lastPress = 0;
   socket.on('pressButton', (d) => {
     const now = Date.now();
-    if (!d || core.ex || now - lastPress < 120) return;
+    if (!d || core.ex || core.melt || now - lastPress < 120) return;
     if ((d.type !== 'cool' && d.type !== 'heat') || !Number.isInteger(d.i) || d.i < 0 || d.i > 3) return;
     lastPress = now;
     const arr = d.type === 'cool' ? core.cl : core.ht;
