@@ -162,8 +162,10 @@ function drawCodeScreen(cv,compact){
   x.fillStyle='#050b14';x.fillRect(0,0,w,h);
   x.strokeStyle=st.col;x.lineWidth=8;x.strokeRect(4,4,w-8,h-8);
   x.textAlign='center';x.textBaseline='middle';
-  x.fillStyle=st.col;x.font='bold '+Math.round(h*(compact?.2:.38))+'px system-ui,sans-serif';x.fillText(st.name,w/2,h*(compact?.42:.52),w-40);
+  x.fillStyle=st.col;x.font='bold '+Math.round(h*(compact?.17:.38))+'px system-ui,sans-serif';x.fillText(st.name,w/2,h*(compact?.24:.52),w-40);
   if(compact){
+    // the computer also shows the core temperature
+    x.fillStyle='#e2e8f0';x.font='bold '+Math.round(h*.28)+'px system-ui,sans-serif';x.fillText(coreState.t+' \u00b0C',w/2,h*.55,w-40);
     x.fillStyle=coreState.cd>0?'#ef4444':'#64748b';x.font=Math.round(h*.075)+'px system-ui,sans-serif';
     x.fillText(coreState.cd>0?'EXPLOSION IMMINENT':'Use the COOL / HEAT keys below',w/2,h*.85,w-30);
   }
