@@ -33,11 +33,6 @@ canvas{display:block;width:100%;height:100%}
 #toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(56px + env(safe-area-inset-top,0px));z-index:30;display:none;max-width:85%;padding:8px 12px;border-radius:10px;background:rgba(15,23,42,.9);color:#fff;font-size:13px;text-align:center;pointer-events:none}
 #aimhint{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(170px + env(safe-area-inset-bottom,0px));z-index:6;display:none;padding:8px 14px;border-radius:999px;background:rgba(15,23,42,.78);border:1px solid rgba(255,255,255,.4);color:#fff;font-size:14px;pointer-events:none;white-space:nowrap}
 #flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:25}
-#evac{position:fixed;left:50%;transform:translateX(-50%);top:calc(70px + env(safe-area-inset-top,0px));z-index:24;display:none;max-width:90%;padding:10px 16px;border-radius:10px;background:rgba(185,28,28,.92);border:2px solid #fff;color:#fff;font-size:20px;font-weight:700;text-align:center;pointer-events:none;animation:evacblink .7s infinite}
-@keyframes evacblink{50%{opacity:.55}}
-#dead{position:fixed;inset:0;z-index:26;display:none;flex-direction:column;align-items:center;justify-content:center;background:#000;opacity:0;transition:opacity 1.2s ease-in;color:#fff;text-align:center;padding:20px;pointer-events:none}
-#dead b{font-size:44px;letter-spacing:.06em}
-#dead span{font-size:16px;margin-top:10px;opacity:.85}
 </style>
 </head>
 <body>
@@ -72,7 +67,6 @@ canvas{display:block;width:100%;height:100%}
 </div></div>
 <div id="aimhint"></div>
 <div id="flash"></div>
-<div id="evac"></div>
 <div id="dead"><b>YOU DIED</b><span>Respawning in <i id="deadsec">6</i>...</span></div>
 <div id="xh"></div>
 <div id="joy"><div id="knob"></div></div>
@@ -896,12 +890,9 @@ function beep(freq){
   }catch(_){}
 }
 function updateEvac(){
-  const el=document.getElementById('evac'),cd=coreState.cd||0;
-  if(!started||cd<=0||exFx.active){if(lastCd!==-1){el.style.display='none';lastCd=-1}return}
-  const txt=(insideFacility()?'EVACUATE NOW OR DIE!':'STAY CLEAR OF THE FACILITY!')+' Explosion in '+cd+'s';
-  if(el.textContent!==txt)el.textContent=txt;
-  el.style.display='block';
-  if(cd!==lastCd){lastCd=cd;beep(cd<=10?1200:800)}
+  const cd=coreState.cd||0;
+  if(!started||cd<=0||exFx.active){lastCd=-1;return}
+  if(cd!==lastCd){lastCd=cd;beep(cd<=10?1200:800)} // siren only; no on-screen banner
 }
 function shakeAmt(){return exFx.active?Math.max(0,1-(performance.now()/1000-exFx.t0)/3.5)*.4:0}
 initExplosion();
