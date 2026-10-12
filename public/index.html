@@ -33,6 +33,9 @@ canvas{display:block;width:100%;height:100%}
 #toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(56px + env(safe-area-inset-top,0px));z-index:30;display:none;max-width:85%;padding:8px 12px;border-radius:10px;background:rgba(15,23,42,.9);color:#fff;font-size:13px;text-align:center;pointer-events:none}
 #aimhint{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(170px + env(safe-area-inset-bottom,0px));z-index:6;display:none;padding:8px 14px;border-radius:999px;background:rgba(15,23,42,.78);border:1px solid rgba(255,255,255,.4);color:#fff;font-size:14px;pointer-events:none;white-space:nowrap}
 #flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:25}
+#dead{position:fixed;inset:0;z-index:26;display:none;flex-direction:column;align-items:center;justify-content:center;background:#000;opacity:0;transition:opacity 1.6s ease-in;color:#fff;text-align:center;padding:20px;pointer-events:none}
+#dead b{font-size:44px;letter-spacing:.06em}
+#dead span{font-size:16px;margin-top:10px;opacity:.85}
 </style>
 </head>
 <body>
@@ -584,7 +587,7 @@ function sendPresence(dt){
   if(!socket||!socket.connected)return;
   sendAcc+=dt;if(sendAcc<0.066)return;sendAcc=0;
   const p=player.position;
-  socket.volatile.emit('playerMovement',{x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),r:+player.rotation.y.toFixed(2),c:myColor,n:myName,dd:dead?1:0});
+  socket.volatile.emit('playerMovement',{x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),r:+player.rotation.y.toFixed(2),c:myColor,n:myName,dd:dead?1:0,rg:(dead&&localRag)?[+localRag.h.position.x.toFixed(2),+localRag.h.position.y.toFixed(2),+localRag.h.position.z.toFixed(2),+localRag.h.rotation.x.toFixed(3),+localRag.h.rotation.y.toFixed(3),+localRag.h.rotation.z.toFixed(3),localRag.landed?1:0]:undefined});
 }
 function makeTag(name){
   const c=document.createElement('canvas');c.width=256;c.height=64;const x=c.getContext('2d');
@@ -610,8 +613,12 @@ function setRemote(id,d){
   r.t={x:d.x,y:d.y||0,z:d.z,r:d.r||0};
   const isDead=!!d.dd;
   if(isDead&&!r.rag){
-    let hs=0;for(const ch of String(id))hs=(hs*31+ch.charCodeAt(0))>>>0;
-    r.rag=spawnRagdoll(typeof d.c==='number'?d.c:(r.c||0x3b82f6),r.g.position.x,r.g.position.y,r.g.position.z,r.g.rotation.y,hs);
+    r.rag=spawnRagdoll(typeof d.c==='number'?d.c:(r.c||0x3b82f6),r.g.position.x,r.g.position.y,r.g.position.z,r.g.rotation.y,hashStr(id),true);
+  }
+  if(isDead&&r.rag&&Array.isArray(d.rg)&&d.rg.length===7){
+    const R=r.rag;
+    if(!R.tp){R.h.position.set(d.rg[0],d.rg[1],d.rg[2]);R.h.rotation.set(d.rg[3],d.rg[4],d.rg[5])} // snap on the first update
+    R.tp=[d.rg[0],d.rg[1],d.rg[2]];R.tr=[d.rg[3],d.rg[4],d.rg[5]];if(d.rg[6])R.tl=true;
   }
   if(!isDead&&r.rag){removeRagdoll(r.rag);r.rag=null;r.g.position.set(d.x,d.y||0,d.z)}
   r.g.visible=!isDead;
@@ -734,53 +741,82 @@ function radialTex(inner,outer){
   x.fillStyle=g;x.fillRect(0,0,128,128);return new THREE.CanvasTexture(c);
 }
 const smokeTex=radialTex('rgba(55,55,55,.95)','rgba(55,55,55,0)'),fireTex=radialTex('rgba(255,210,90,1)','rgba(255,70,0,0)');
-let dead=false,deadUntil=0,deadStart=0;
+let dead=false,deadUntil=0,deadStart=0,deadTimer=null,localRag=null;
 const deadEl=document.getElementById('dead'),deadSec=document.getElementById('deadsec');
+function hashStr(str){let hs=0;for(const ch of String(str))hs=(hs*31+ch.charCodeAt(0))>>>0;return hs}
 function killPlayer(){
   if(dead)return;
   dead=true;deadStart=performance.now();deadUntil=deadStart+6000;
   for(const k in keys)keys[k]=false;
   joyV.x=joyV.y=0;jumpQueued=false;
+  // our own body ragdolls and the camera rides along with it
+  localRag=spawnRagdoll(myColor,player.position.x,player.position.y,player.position.z,player.rotation.y,hashStr((socket&&socket.id)||'me'),false);
   deadEl.style.display='flex';deadEl.style.opacity=0;
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{deadEl.style.opacity=1})); // fade to black
+  clearTimeout(deadTimer);deadTimer=setTimeout(()=>{if(dead)deadEl.style.opacity=1},1300); // fade to black after the tumble
 }
 function respawn(){
-  dead=false;deadEl.style.transition='none';deadEl.style.opacity=0;deadEl.style.display='none';deadEl.style.transition='';
+  dead=false;clearTimeout(deadTimer);
+  if(localRag){removeRagdoll(localRag);localRag=null}
+  deadEl.style.transition='none';deadEl.style.opacity=0;deadEl.style.display='none';deadEl.style.transition='';
   player.position.set(0,0,0);vel.set(0,0,0);
 }
 
-// ---- ragdoll bodies: other players see a dead player's body tumble and lie where it lands ----
+// ---- ragdoll bodies ----
+// The dying player simulates their own ragdoll and streams its pose; everyone else just displays that pose,
+// so all players see the body die the same way.
 const ragdolls=[];
 function seededRng(seed){let q=(seed%2147483646)+1;return()=>(q=(q*16807)%2147483647)/2147483647}
-function spawnRagdoll(color,x,y,z,rotY,seed){
+function flail(R){
+  const u=R.g.userData,f=Math.sin(R.t*9+R.ph[0])*1.3,f2=Math.cos(R.t*7+R.ph[1])*1.1;
+  u.armL.rotation.x=f;u.armR.rotation.x=-f;u.legL.rotation.x=f2;u.legR.rotation.x=-f2;u.armL.rotation.z=.9;u.armR.rotation.z=-.9;
+}
+function landPose(R){ // sprawled limbs, identical for everyone (seeded)
+  const u=R.g.userData,r=seededRng(R.seed+7);
+  u.armL.rotation.set((r()-.5)*1.2,0,1.1+r()*.6);u.armR.rotation.set((r()-.5)*1.2,0,-(1.1+r()*.6));
+  u.legL.rotation.set((r()-.5)*.6,0,.2+r()*.3);u.legR.rotation.set((r()-.5)*.6,0,-(.2+r()*.3));
+}
+function spawnRagdoll(color,x,y,z,rotY,seed,remote){
   const rnd=seededRng(seed),g=makeChar(color);
   g.position.set(0,-1.1,0); // pivot around the middle of the body
   const h=new THREE.Group();h.rotation.order='YXZ';h.add(g);scene.add(h);
   h.position.set(x,y+1.1,z);h.rotation.y=rotY;
   const dx=x-FX,dz=z-FZ,d=Math.hypot(dx,dz)||1,sp=12+rnd()*8;
-  const R={h,g,rnd,t:0,landed:false,v:new THREE.Vector3(dx/d*sp,9+rnd()*6,dz/d*sp),w:new THREE.Vector3((rnd()-.5)*10,(rnd()-.5)*6,(rnd()-.5)*10),ph:[rnd()*6,rnd()*6]};
+  const R={h,g,rnd,seed,remote:!!remote,t:0,landed:false,tp:null,tr:null,tl:false,
+    v:new THREE.Vector3(dx/d*sp,9+rnd()*6,dz/d*sp),w:new THREE.Vector3((rnd()-.5)*10,(rnd()-.5)*6,(rnd()-.5)*10),ph:[rnd()*6,rnd()*6]};
   ragdolls.push(R);return R;
 }
 function removeRagdoll(R){scene.remove(R.h);const i=ragdolls.indexOf(R);if(i>=0)ragdolls.splice(i,1)}
 function ragdollTick(dt){
   for(const R of ragdolls){
-    const u=R.g.userData;R.t+=dt;
+    R.t+=dt;
+    if(R.remote){ // follow the pose sent by the player who died
+      const k=Math.min(1,dt*14);
+      if(R.tp){R.h.position.x+=(R.tp[0]-R.h.position.x)*k;R.h.position.y+=(R.tp[1]-R.h.position.y)*k;R.h.position.z+=(R.tp[2]-R.h.position.z)*k}
+      if(R.tr){R.h.rotation.x+=(R.tr[0]-R.h.rotation.x)*k;R.h.rotation.y+=(R.tr[1]-R.h.rotation.y)*k;R.h.rotation.z+=(R.tr[2]-R.h.rotation.z)*k}
+      if(R.tl&&!R.landed){R.landed=true;landPose(R)}
+      if(!R.landed)flail(R);
+      continue;
+    }
     if(!R.landed){
       R.v.y-=22*dt;R.h.position.addScaledVector(R.v,dt);
       R.h.rotation.x+=R.w.x*dt;R.h.rotation.y+=R.w.y*dt;R.h.rotation.z+=R.w.z*dt;
-      const f=Math.sin(R.t*9+R.ph[0])*1.3,f2=Math.cos(R.t*7+R.ph[1])*1.1; // limbs flail
-      u.armL.rotation.x=f;u.armR.rotation.x=-f;u.legL.rotation.x=f2;u.legR.rotation.x=-f2;u.armL.rotation.z=.9;u.armR.rotation.z=-.9;
+      flail(R);
       if(R.h.position.y<=.25&&R.v.y<0){
         R.landed=true;R.h.position.y=.22;
         R.h.rotation.x=(R.rnd()<.5?1:-1)*Math.PI/2;R.h.rotation.z=(R.rnd()-.5)*.6;
-        u.armL.rotation.set((R.rnd()-.5)*1.2,0,1.1+R.rnd()*.6);u.armR.rotation.set((R.rnd()-.5)*1.2,0,-(1.1+R.rnd()*.6));
-        u.legL.rotation.set((R.rnd()-.5)*.6,0,.2+R.rnd()*.3);u.legR.rotation.set((R.rnd()-.5)*.6,0,-(.2+R.rnd()*.3));
-        R.v.y=0;
+        landPose(R);R.v.y=0;
       }
     }else{
       R.v.multiplyScalar(Math.pow(.02,dt));R.h.position.x+=R.v.x*dt;R.h.position.z+=R.v.z*dt;
     }
   }
+}
+const _hv=new THREE.Vector3(),_flip=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),Math.PI);
+function ragdollCam(){ // first-person view from the tumbling body's head
+  const R=localRag;if(!R)return;
+  R.h.updateMatrixWorld(true);_hv.set(0,.85,.3);R.h.localToWorld(_hv);
+  camera.position.copy(_hv);camera.position.y=Math.max(.15,camera.position.y);
+  camera.quaternion.copy(R.h.quaternion).multiply(_flip);
 }
 function insideFacility(){return Math.abs(player.position.x-FX)<31&&Math.abs(player.position.z-FZ)<23}
 function throwOut(){player.position.set(FX+(Math.random()-.5)*10,0,FZ+32);vel.set(0,0,0)}
@@ -1049,7 +1085,7 @@ function tick(){
     // first-person: camera at eye height, looking where you aim
     camera.position.set(tx,player.position.y+1.85,tz);
     camera.rotation.set(pitch,yaw,0);
-    if(dead){const pf=Math.min(1,(performance.now()-deadStart)/600);camera.position.y=player.position.y+1.85-1.45*pf;camera.rotation.z=1.3*pf}
+    if(dead&&localRag)ragdollCam();
     const sk=shakeAmt();if(sk){camera.position.x+=(Math.random()-.5)*sk;camera.position.y+=(Math.random()-.5)*sk;camera.rotation.z=(Math.random()-.5)*sk*.12}
   }else{
     // menu: slow orbit around the character
