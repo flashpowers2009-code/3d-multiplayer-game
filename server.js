@@ -227,6 +227,10 @@ io.on('connection', (socket) => {
       z: Math.max(-100, Math.min(100, num(d.z))),
       r: num(d.r),
       dd: d.dd ? 1 : 0, // 1 while the player is dead (others hide their body)
+      // while dead, the dying player streams their ragdoll pose: [x, y, z, rotX, rotY, rotZ, landed]
+      rg: d.dd && Array.isArray(d.rg) && d.rg.length === 7
+        ? d.rg.map((v, i) => (i < 3 ? Math.max(-150, Math.min(150, num(v))) : num(v)))
+        : undefined,
       c: color,
       n: username,
     };
