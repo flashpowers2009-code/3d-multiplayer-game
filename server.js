@@ -158,8 +158,8 @@ const online = new Map(); // account key -> socket
 // ---- Shared reactor core: one temperature everyone sees and controls ----
 // The core starts at 0 C and always cools by exactly 1 C per second. Each heater key that is on adds +2 C/s and
 // each cooler key that is on removes 2 C/s. The net rate is always odd (-1, +1, -3, +3...), so it can never
-// hold steady. Reaching CODE BLACK (2000 C) blows up the facility; it is rebuilt after 45 seconds.
-const EXPLODE_AT = 2000;
+// hold steady. Reaching CODE BLACK (2500 C) blows up the facility; it is rebuilt after 45 seconds.
+const EXPLODE_AT = 2500;
 const REBUILD_MS = 45000;
 const core = { temp: 0, cl: [false, false, false, false], ht: [false, false, false, false], by: '', ex: false };
 let exTimer = null;
