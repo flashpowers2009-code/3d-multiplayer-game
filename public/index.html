@@ -141,10 +141,10 @@ function statusOf(T){
   if(T<500)return{name:'CODE BLUE',col:'#3b82f6'};
   if(T<1000)return{name:'CODE GREEN',col:'#4ade80'};
   if(T<1500)return{name:'CODE YELLOW',col:'#fbbf24'};
-  if(T<2000)return{name:'C0D3_R3D',col:'#ef4444'};
+  if(T<2500)return{name:'C0D3_R3D',col:'#ef4444'};
   return{name:'C0D3_8L4CK',col:'#e2e8f0'};
 }
-const CSTOPS=[[0,0x3b82f6],[450,0x3b82f6],[550,0x4ade80],[950,0x4ade80],[1050,0xfbbf24],[1450,0xfbbf24],[1550,0xef4444],[2000,0xef4444]].map(([t,c])=>[t,new THREE.Color(c)]);
+const CSTOPS=[[0,0x3b82f6],[450,0x3b82f6],[550,0x4ade80],[950,0x4ade80],[1050,0xfbbf24],[1450,0xfbbf24],[1550,0xef4444],[2500,0xef4444]].map(([t,c])=>[t,new THREE.Color(c)]);
 function coreColor(T,out){
   if(T<=CSTOPS[0][0])return out.copy(CSTOPS[0][1]);
   for(let i=1;i<CSTOPS.length;i++){const [t1,c1]=CSTOPS[i],[t0,c0]=CSTOPS[i-1];if(T<=t1)return out.copy(c0).lerp(c1,(T-t0)/(t1-t0))}
@@ -159,9 +159,9 @@ function drawReadout(cv,compact){
   x.fillStyle='#94a3b8';x.font=f(.09,true);x.fillText('CORE TEMPERATURE',w*.04,h*.07);
   x.fillStyle=st.col;x.font=f(.34,true);x.fillText(T+' \u00b0C',w*.04,h*.18);
   const bx=w*.04,by=h*.62,bw=w*.92,bh=h*.1,g=x.createLinearGradient(bx,0,bx+bw,0);
-  [[0,'#3b82f6'],[.249,'#3b82f6'],[.25,'#4ade80'],[.499,'#4ade80'],[.5,'#fbbf24'],[.749,'#fbbf24'],[.75,'#ef4444'],[.995,'#ef4444'],[.996,'#000000'],[1,'#000000']].forEach(([o,c])=>g.addColorStop(o,c));
+  [[0,'#3b82f6'],[.199,'#3b82f6'],[.2,'#4ade80'],[.399,'#4ade80'],[.4,'#fbbf24'],[.599,'#fbbf24'],[.6,'#ef4444'],[.995,'#ef4444'],[.996,'#000000'],[1,'#000000']].forEach(([o,c])=>g.addColorStop(o,c));
   x.fillStyle=g;x.fillRect(bx,by,bw,bh);x.strokeStyle='#64748b';x.lineWidth=2;x.strokeRect(bx,by,bw,bh);
-  x.fillStyle='#fff';x.fillRect(bx+bw*Math.max(0,Math.min(1,T/2000))-3,by-6,6,bh+12);
+  x.fillStyle='#fff';x.fillRect(bx+bw*Math.max(0,Math.min(1,T/2500))-3,by-6,6,bh+12);
   x.fillStyle=st.col;x.font=f(.1,true);x.fillText(st.name,w*.04,h*.78);
   x.fillStyle='#94a3b8';x.font=f(.07,false);x.textAlign='right';x.fillText('COOL '+coreState.cl.filter(Boolean).length+'/4 \u00b7 HEAT '+coreState.ht.filter(Boolean).length+'/4',w*.96,h*.8);
   if(compact){x.textAlign='center';x.fillStyle='#64748b';x.fillText('Use the COOL / HEAT keys below',w/2,h*.92)}
@@ -369,9 +369,9 @@ function drawAllReadouts(){for(const r of facReadouts){drawReadout(r.cv,r.compac
   facAnims.push(t=>{
     const dt=Math.min(.1,Math.max(0,t-lastT));lastT=t;
     dispT+=(coreState.t-dispT)*Math.min(1,dt*5);
-    const k=Math.max(0,Math.min(1,dispT/2000));
+    const k=Math.max(0,Math.min(1,dispT/2500));
     coreColor(dispT,cTmp);
-    if(coreState.t>=2000)cTmp.set(Math.floor(t*5)%2===0?0x000000:0xff2a2a);
+    if(coreState.t>=2500)cTmp.set(Math.floor(t*5)%2===0?0x000000:0xff2a2a);
     orb.material.color.copy(cTmp);cage.material.color.copy(cTmp).lerp(white,.45);
     rings.forEach(r=>r.material.color.copy(cTmp));up.material.color.copy(cTmp);dn.material.color.copy(cTmp);
     decals.forEach(d=>d.material.color.copy(cTmp));coreLight.color.copy(cTmp);
