@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>C0D3_R3D</title>
+<title>3D Third-Person</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#9ad0ec;touch-action:none;user-select:none;-webkit-user-select:none;font-family:system-ui,sans-serif}
 canvas{display:block;width:100%;height:100%}
@@ -154,16 +154,23 @@ function coreColor(T,out){
 }
 function drawCodeScreen(cv,compact){
   const x=cv.getContext('2d'),w=cv.width,h=cv.height,st=statusOf(coreState.t);
+  const font=(sz,bold)=>(bold?'bold ':'')+Math.round(h*sz)+'px system-ui,sans-serif';
   x.fillStyle='#050b14';x.fillRect(0,0,w,h);
   x.strokeStyle=st.col;x.lineWidth=8;x.strokeRect(4,4,w-8,h-8);
   x.textAlign='center';x.textBaseline='middle';
-  x.fillStyle=st.col;x.font='bold '+Math.round(h*(compact?.17:.38))+'px system-ui,sans-serif';x.fillText(st.name,w/2,h*(compact?.24:.52),w-40);
-  if(compact){
-    // the computer also shows the core temperature
-    x.fillStyle='#e2e8f0';x.font='bold '+Math.round(h*.28)+'px system-ui,sans-serif';x.fillText(coreState.t+' \u00b0C',w/2,h*.55,w-40);
-    x.fillStyle=coreState.cd>0?'#ef4444':'#64748b';x.font=Math.round(h*.075)+'px system-ui,sans-serif';
-    x.fillText(coreState.cd>0?'EXPLOSION IMMINENT':'Use the COOL / HEAT keys below',w/2,h*.85,w-30);
-  }
+  x.fillStyle=st.col;x.font=font(compact?.15:.38,true);x.fillText(st.name,w/2,h*(compact?.15:.52),w-40);
+  if(!compact)return;
+  // the computer also shows the core temperature
+  x.fillStyle='#e2e8f0';x.font=font(.24,true);x.fillText(coreState.t+' \u00b0C',w/2,h*.37,w-40);
+  // warning / notices
+  const notes=[];
+  if(coreState.pm.every(v=>!v))notes.push(['WARNING: ALL COOLING PUMPS OFF','#ef4444']);
+  if(coreState.ht.every(Boolean))notes.push(['NOTICE: ALL HEATERS ON','#fbbf24']);
+  if(coreState.cl.every(v=>!v))notes.push(['NOTICE: ALL COOLERS OFF','#fbbf24']);
+  x.font=font(.066,true);
+  notes.forEach(([txt,col],i)=>{x.fillStyle=col;x.fillText(txt,w/2,h*(.58+i*.08),w-30)});
+  x.fillStyle=coreState.cd>0?'#ef4444':'#64748b';x.font=font(.06,false);
+  x.fillText(coreState.cd>0?'EXPLOSION IMMINENT':'Use the COOL / HEAT keys below',w/2,h*.92,w-30);
 }
 function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.tex.needsUpdate=true}}
 (function(){
@@ -981,7 +988,7 @@ function pressBtn(m){
   if(socket&&socket.connected)socket.emit('pressButton',{type:m.userData.type,i:m.userData.i});
 }
 function updateButtons(){
-  for(const m of btnMeshes){const u=m.userData;m.material.color.setHex(btnOn(u)?u.on:u.off)}
+  for(const m of btnMeshes){const u=m.userData;m.material.color.setHex(u.type==='cool'&&!coreState.pm[u.i]?0x6b7280:(btnOn(u)?u.on:u.off))} // grey = pump off, cooler unusable
 }
 function aimCheck(){
   aimBtn=null;
