@@ -162,11 +162,11 @@ const online = new Map(); // account key -> socket
 const EXPLODE_AT = 2500;
 const EVAC_MS = 30000;      // time to evacuate once CODE BLACK is reached
 const REBUILD_MS = 45000;
-const core = { temp: 0, cl: [false, false, false, false], ht: [false, false, false, false], by: '', ex: false, melt: false, meltAt: 0 };
+const core = { temp: 0, cl: [false, false, false, false], ht: [false, false, false, false], by: '', ex: false, melt: false, meltAt: 0, pm: [true, true, true, true] };
 let exTimer = null, evacTimer = null;
 const resetCore = () => {
   clearTimeout(exTimer); exTimer = null; clearTimeout(evacTimer); evacTimer = null; core.melt = false;
-  core.temp = 0; core.cl = [false, false, false, false]; core.ht = [false, false, false, false]; core.by = ''; core.ex = false;
+  core.temp = 0; core.cl = [false, false, false, false]; core.ht = [false, false, false, false]; core.by = ''; core.ex = false; core.pm = [true, true, true, true];
 };
 const NATURAL_COOLING = 1;  // degrees C lost per second with everything off
 const HEATER_POWER = 2;     // degrees C per second added by each heater
@@ -177,7 +177,7 @@ setInterval(() => {
   const dt = 0.1;
   const rate = -NATURAL_COOLING
     + core.ht.filter(Boolean).length * HEATER_POWER
-    - core.cl.filter(Boolean).length * COOLER_POWER;
+    - core.cl.filter((on, i) => on && core.pm[i]).length * COOLER_POWER; // a cooler only works while its pump is on
   core.temp = Math.max(0, Math.min(EXPLODE_AT, core.temp + rate * dt));
   if (core.temp >= EXPLODE_AT) {
     // CODE BLACK: the meltdown can't be stopped. Players get EVAC_MS to get out, then the facility explodes.
@@ -192,7 +192,7 @@ setInterval(() => {
     }, EVAC_MS);
   }
 }, 100);
-const coreMsg = () => ({ t: Math.round(core.temp), cl: core.cl, ht: core.ht, by: core.by, ex: core.ex, cd: core.melt ? Math.max(0, Math.ceil((core.meltAt - Date.now()) / 1000)) : 0 });
+const coreMsg = () => ({ t: Math.round(core.temp), cl: core.cl, ht: core.ht, by: core.by, pm: core.pm, ex: core.ex, cd: core.melt ? Math.max(0, Math.ceil((core.meltAt - Date.now()) / 1000)) : 0 });
 setInterval(() => { if (online.size) io.emit('core', coreMsg()); }, 250);
 const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
 
@@ -237,15 +237,22 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('serverUpdate', socket.id, players[socket.id]);
   });
 
-  // Press a cooler/heater button in the core hall (toggles it for everyone)
+  // Press a cooler/heater key on the core computer, or a cooling pump switch in the cooling room (toggles it for everyone)
   let lastPress = 0;
   socket.on('pressButton', (d) => {
     const now = Date.now();
     if (!d || core.ex || core.melt || now - lastPress < 120) return;
-    if ((d.type !== 'cool' && d.type !== 'heat') || !Number.isInteger(d.i) || d.i < 0 || d.i > 3) return;
+    if (!['cool', 'heat', 'pump'].includes(d.type) || !Number.isInteger(d.i) || d.i < 0 || d.i > 3) return;
     lastPress = now;
-    const arr = d.type === 'cool' ? core.cl : core.ht;
-    arr[d.i] = !arr[d.i];
+    if (d.type === 'pump') {
+      core.pm[d.i] = !core.pm[d.i];
+      if (!core.pm[d.i]) core.cl[d.i] = false; // switching a pump off shuts its cooler off too
+    } else if (d.type === 'cool') {
+      if (!core.pm[d.i]) return; // pump is off: this cooler can't be used
+      core.cl[d.i] = !core.cl[d.i];
+    } else {
+      core.ht[d.i] = !core.ht[d.i];
+    }
     core.by = username;
     io.emit('core', coreMsg());
   });
