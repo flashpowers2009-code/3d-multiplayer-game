@@ -231,8 +231,9 @@ function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.
   for(const x of [-10,10]){wallX(x,-22,-10,[-16]);wallX(x,-10,10,[0],9);wallX(x,10,22,[16])}
   // roof: low everywhere, high over the core hall
   const RC=0x6b7280;
-  B(20.6,.4,44.6,RC,-20,5.2,0,false);B(20.6,.4,44.6,RC,20,5.2,0,false);
-  B(19.4,.4,12.6,RC,0,5.2,-16,false);B(19.4,.4,12.6,RC,0,5.2,16,false);
+  // the low roof ends in the middle of the core hall's walls (not flush with their inner face), which fixes the flickering line
+  B(20.3,.4,44.6,RC,-20.15,5.2,0,false);B(20.3,.4,44.6,RC,20.15,5.2,0,false);
+  B(20,.4,12.3,RC,0,5.2,-16.15,false);B(20,.4,12.3,RC,0,5.2,16.15,false);
   B(20.6,.4,20.6,RC,0,9.2,0,false);
 
   // ---------- floors ----------
