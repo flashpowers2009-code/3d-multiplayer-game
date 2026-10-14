@@ -197,6 +197,8 @@ setInterval(() => {
 }, 100);
 const coreMsg = () => ({ t: Math.round(core.temp), cl: core.cl, ht: core.ht, by: core.by, pm: core.pm, ex: core.ex, cd: core.melt ? Math.max(0, Math.ceil((core.meltAt - Date.now()) / 1000)) : 0 });
 setInterval(() => { if (online.size) io.emit('core', coreMsg()); }, 250);
+// ---- Pistols (PvP) ----
+const GUN = { DMG: 20, HEAD: 40, RANGE: 150, COOLDOWN: 180, SPAWN_PROTECTION: 3000 };
 const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
 
 io.use(async (socket, next) => {
@@ -217,12 +219,14 @@ io.on('connection', (socket) => {
   const prev = online.get(key);
   if (prev) { prev.emit('kicked'); prev.disconnect(true); }
   online.set(key, socket);
+  socket.hp = 100; socket.dead = false; socket.protUntil = 0; socket.lastShot = 0;
 
   socket.emit('currentPlayers', players);
   socket.emit('core', coreMsg());
 
   socket.on('playerMovement', (d) => {
     if (!d || typeof d !== 'object') return;
+    if (d.dd) socket.dead = true; // stays dead until the client reports 'respawned'
     // Name and color always come from the account, never from the client
     players[socket.id] = {
       x: Math.max(-100, Math.min(100, num(d.x))),
@@ -238,6 +242,35 @@ io.on('connection', (socket) => {
       n: username,
     };
     socket.broadcast.emit('serverUpdate', socket.id, players[socket.id]);
+  });
+
+  // Shooting: the shooter's client says what it hit; the server checks it and applies the damage
+  const vec3 = (a) => Array.isArray(a) && a.length === 3 ? a.map(num) : null;
+  socket.on('shoot', (d) => {
+    const now = Date.now();
+    if (!d || socket.dead || now - socket.lastShot < GUN.COOLDOWN) return;
+    socket.lastShot = now;
+    const o = vec3(d.o), dir = vec3(d.d);
+    if (o && dir) socket.broadcast.volatile.emit('shot', socket.id, o, dir);
+    if (typeof d.hit !== 'string') return;
+    const target = io.sockets.sockets.get(d.hit);
+    if (!target || target === socket || target.dead || now < target.protUntil) return;
+    const sp = players[socket.id], tp = players[d.hit];
+    if (!sp || !tp || Math.hypot(sp.x - tp.x, sp.z - tp.z) > GUN.RANGE) return;
+    target.hp -= d.head ? GUN.HEAD : GUN.DMG;
+    const dx = tp.x - sp.x, dz = tp.z - sp.z;
+    const dead = target.hp <= 0;
+    target.emit('hurt', { hp: Math.max(0, target.hp) });
+    socket.emit('hitmark', { kill: dead });
+    if (dead) {
+      target.dead = true;
+      target.emit('killed', { by: username, dx, dz });
+      io.emit('feed', { k: username, v: target.account.username });
+    }
+  });
+  socket.on('respawned', () => {
+    socket.hp = 100; socket.dead = false; socket.protUntil = Date.now() + GUN.SPAWN_PROTECTION;
+    socket.emit('hp', 100);
   });
 
   // Press a cooler/heater key on the core computer, or a cooling pump switch in the cooling room (toggles it for everyone)
