@@ -13,7 +13,10 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.json({ limit: '2kb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+// always revalidate so phones don't keep showing an old copy of the game
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
+}));
 
 /* ---------- Storage: Postgres if DATABASE_URL is set, else a local JSON file ---------- */
 let store;
