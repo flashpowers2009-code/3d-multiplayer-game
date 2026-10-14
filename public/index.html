@@ -313,7 +313,7 @@ function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.
     const r=new THREE.Mesh(new THREE.RingGeometry(a,b,48),basicM(0x22d3ee,{transparent:true,opacity:.55,side:THREE.DoubleSide}));
     r.rotation.x=-Math.PI/2;r.position.y=.06;core.add(r);
   }
-  const coreLight=new THREE.PointLight(0x22d3ee,1.3,26);coreLight.position.y=3;core.add(coreLight);
+  const coreLight=new THREE.PointLight(0x22d3ee,1.3,10);coreLight.position.y=3;core.add(coreLight);
   // glass enclosure around the core: solid, so nobody can get close to it
   const glassMat=new THREE.MeshPhongMaterial({color:0x9be7ff,transparent:true,opacity:.16,shininess:90,side:THREE.DoubleSide,depthWrite:false});
   const glass=new THREE.Mesh(new THREE.CylinderGeometry(2.6,2.6,6.4,48,1,true),glassMat);glass.position.y=3.3;core.add(glass);
@@ -394,7 +394,7 @@ function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.
     cage.rotation.y=ph*.5;cage.rotation.x=ph*.3;
     const pulse=Math.sin(t*(3+k*9));
     orb.scale.setScalar(1+pulse*(.06+.1*k));
-    coreLight.intensity=1+k+pulse*.3;
+    coreLight.intensity=(1+k+pulse*.3)*1.8;
     hallStripMat.color.set(coreState.t>=1500&&Math.floor(t*2.5)%2===0?0xff3b3b:0xf8fafc);
   });
 
@@ -415,7 +415,7 @@ function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.
   for(const z of [-14.5,-18])for(const x of [-6.5,-3.5,3.5,6.5])consoleDesk(x,z,0);
   sign('CONTROL ROOM',4.6,0,4.55,-21.68,0,'#60a5fa');
   strip(-4,-16,.5,10,4.95);strip(4,-16,.5,10,4.95);
-  const ctlLight=new THREE.PointLight(0x60a5fa,.8,18);ctlLight.position.set(FX,3.8,FZ-16);facGroup.add(ctlLight);
+  const ctlLight=new THREE.PointLight(0x60a5fa,.8,6.5);ctlLight.position.set(FX,3.4,FZ-19);facGroup.add(ctlLight);
 
   // ---------- SERVER HALL (west) ----------
   for(const z of [-6,-3.6,-1.2,1.2,3.6,6]){rack(-27.6,z,1);rack(-24.4,z,-1)}
@@ -433,7 +433,7 @@ function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.
   pipe(18,.18,0x9a6b3a,29,3.8,0,'z');pipe(10,.18,0x9a6b3a,24,3.8,-9,'x');
   sign('POWER ROOM',4,29.68,4.3,-6,-Math.PI/2,'#fb923c');
   strip(15,0,.5,16,4.95);strip(26,0,.5,16,4.95);
-  const powLight=new THREE.PointLight(0xff9a3c,.9,18);powLight.position.set(FX+24,3.4,FZ);facGroup.add(powLight);
+  const powLight=new THREE.PointLight(0xff9a3c,.9,6.5);powLight.position.set(FX+26.5,3.2,FZ);facGroup.add(powLight);
   facAnims.push(t=>{const k=.55+.45*Math.sin(t*2.2);bandMat.color.setRGB(1*k,.6*k,.24*k);powLight.intensity=.7+.3*k});
 
   // ---------- ARCHIVE (north-west) ----------
@@ -606,7 +606,9 @@ addEventListener('resize',()=>{
 
 // Multiplayer (Socket.io, served by the same Node server)
 const remotes=new Map();let socket=null,sendAcc=0;const countEl=document.getElementById('count');
-function updateCount(){countEl.textContent=(remotes.size+1)+' player'+(remotes.size?'s':'')+' online'}
+const BUILD=3;
+function updateCount(){countEl.textContent=(remotes.size+1)+' player'+(remotes.size?'s':'')+' online \u00b7 build '+BUILD}
+updateCount();
 function sendPresence(dt){
   if(!socket||!socket.connected)return;
   sendAcc+=dt;if(sendAcc<0.066)return;sendAcc=0;
