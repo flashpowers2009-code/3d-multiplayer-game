@@ -259,7 +259,7 @@ function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.
   function cyl(rt,rb,h,mt,lx,y,lz,cr){
     const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,20),typeof mt==='number'?new THREE.MeshLambertMaterial({color:mt}):mt);
     m.position.set(FX+lx,y,FZ+lz);m.castShadow=true;m.receiveShadow=true;facGroup.add(m);
-    if(cr)obstacles.push({x:FX+lx,z:FZ+lz,r:cr});return m;
+    if(cr)obstacles.push({x:FX+lx,z:FZ+lz,r:cr,h:y+h/2});return m;
   }
   function pipe(len,r,col,lx,y,lz,axis){
     const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,len,10),new THREE.MeshLambertMaterial({color:col}));
@@ -321,7 +321,7 @@ function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.
   const frameM=new THREE.MeshLambertMaterial({color:0x334155});
   for(const y of [.1,6.5]){const r=new THREE.Mesh(new THREE.TorusGeometry(2.6,.09,8,48),frameM);r.rotation.x=Math.PI/2;r.position.y=y;core.add(r)}
   for(let i=0;i<8;i++){const a=i/8*Math.PI*2,bar=new THREE.Mesh(new THREE.BoxGeometry(.12,6.4,.12),frameM);bar.position.set(Math.cos(a)*2.6,3.3,Math.sin(a)*2.6);core.add(bar)}
-  obstacles.push({x:FX,z:FZ,r:2.4});
+  obstacles.push({x:FX,z:FZ,r:2.4,h:7}); // glass: as tall as the glass, so you can't jump over it
   const hallStripMat=basicM(0xf8fafc);
   for(const x of [-5,5]){const m=new THREE.Mesh(new THREE.BoxGeometry(.5,.06,12),hallStripMat);m.position.set(FX+x,8.9,FZ);facGroup.add(m)}
   sign('CORE HALL',4,-6,6.6,-9.68,0,'#22d3ee');
@@ -606,7 +606,7 @@ addEventListener('resize',()=>{
 
 // Multiplayer (Socket.io, served by the same Node server)
 const remotes=new Map();let socket=null,sendAcc=0;const countEl=document.getElementById('count');
-const BUILD=3;
+const BUILD=4;
 function updateCount(){countEl.textContent=(remotes.size+1)+' player'+(remotes.size?'s':'')+' online \u00b7 build '+BUILD}
 updateCount();
 function sendPresence(dt){
@@ -1087,7 +1087,7 @@ function tick(){
   // collisions & bounds
   for(const o of obstacles){
     const dx=player.position.x-o.x,dz=player.position.z-o.z,d=Math.hypot(dx,dz),m=o.r+.35;
-    if(d<m&&d>0.001&&player.position.y<1.2){player.position.x=o.x+dx/d*m;player.position.z=o.z+dz/d*m}
+    if(d<m&&d>0.001&&player.position.y<(o.h||1.2)){player.position.x=o.x+dx/d*m;player.position.z=o.z+dz/d*m}
   }
   for(const b of boxes){
     if(player.position.y>b.h)continue;
