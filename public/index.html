@@ -61,8 +61,6 @@ canvas{display:block;width:100%;height:100%}
 #idpic{width:84px;height:84px;border-radius:6px;border:2px solid #94a3b8}
 #idname{font-size:17px;font-weight:700;word-break:break-all}
 #idrole{font-size:12px;margin-top:4px;color:#475569}
-#healfx{position:fixed;inset:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 45%,rgba(34,197,94,.55) 100%);opacity:0;pointer-events:none;z-index:22;transition:opacity .45s}
-#xh.heal{background:#4ade80;transform:scale(2)}
 </style>
 </head>
 <body>
@@ -98,8 +96,8 @@ canvas{display:block;width:100%;height:100%}
 </div></div>
 <div id="flash"></div>
 <div id="hud"><div id="hpbar"><div id="hpfill"></div></div><div id="hptxt">100</div><div id="ammo">12 / 12</div></div>
-<div id="hurt"></div><div id="healfx"></div>
-<div id="hotbar"><div class="slot" data-s="0"><i>1</i><b>PISTOL</b></div><div class="slot" data-s="1"><i>2</i><b>HANDS</b></div><div class="slot" data-s="2"><i>3</i><b>ID CARD</b></div><div class="slot" data-s="3"><i>4</i><b>MEDKIT</b></div></div>
+<div id="hurt"></div>
+<div id="hotbar"><div class="slot" data-s="0"><i>1</i><b>PISTOL</b></div><div class="slot" data-s="1"><i>2</i><b>HANDS</b></div><div class="slot" data-s="2"><i>3</i><b>ID CARD</b></div></div>
 <div id="idcard"><div id="idhead"><b id="idteam">REBEL</b><span>ID CARD</span></div><div id="idbody"><canvas id="idpic" width="128" height="128"></canvas><div><div id="idname">Name</div><div id="idrole">Role</div></div></div></div>
 <button id="firebtn">FIRE</button><button id="reloadbtn">&#8635;</button>
 <div id="dead"><b>YOU DIED</b><span>Respawning in <i id="deadsec">6</i>...</span></div>
@@ -144,7 +142,7 @@ const rockM=new THREE.MeshLambertMaterial({color:0x8d8d8d});
 for(let i=0;i<70;i++){
   const x=(rnd()-.5)*180,z=(rnd()-.5)*180;
   if(Math.hypot(x,z)<8)continue;
-  if(Math.abs(x)<38&&z>-72&&z<-6)continue;
+  if(x>-58&&x<38&&z>-72&&z<-6)continue;
   if(rnd()<0.7){
     const s=0.8+rnd()*0.8,g=new THREE.Group();
     const t=new THREE.Mesh(new THREE.CylinderGeometry(.3*s,.4*s,2*s,8),trunkM);t.position.y=s;t.castShadow=true;
@@ -258,7 +256,9 @@ function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.
     for(const d of ds)B(T,H-3.5,4,WC,x,3.5+(H-3.5)/2,d,false);
   }
   // outer shell
-  wallZ(-22,-30,30,[]);wallZ(22,-30,30,[0]);wallX(-30,-22,22,[]);wallX(30,-22,22,[]);
+  wallZ(-22,-30,30,[]);wallZ(22,-30,30,[0]);wallX(-30,-22,10,[]);wallX(-30,10,22,[16]);wallX(30,-22,22,[]);
+  // security room, west of the medic room
+  wallZ(10,-50,-30,[]);wallZ(22,-50,-30,[]);wallX(-50,10,22,[]);
   // row dividers (z = -10 and z = 10); the core hall's walls are taller (9)
   for(const z of [-10,10]){wallZ(z,-30,-10,[-20]);wallZ(z,-10,10,[0],9);wallZ(z,10,30,[20])}
   // column dividers (x = -10 and x = 10)
@@ -268,11 +268,12 @@ function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.
   // the low roof ends in the middle of the core hall's walls (not flush with their inner face), which fixes the flickering line
   B(20.3,.4,44.6,RC,-20.15,5.2,0,false);B(20.3,.4,44.6,RC,20.15,5.2,0,false);
   B(20,.4,12.3,RC,0,5.2,-16.15,false);B(20,.4,12.3,RC,0,5.2,16.15,false);
+  B(20,.4,12,RC,-40,5.2,16,false);
   B(20.6,.4,20.6,RC,0,9.2,0,false);
 
   // ---------- floors ----------
   const rooms=[[-30,-10,-10,10,0x2b2f36],[10,30,-10,10,0x3b3128],[-10,10,-10,10,0x1f2937],[-10,10,10,22,0x9ca3af],[-10,10,-22,-10,0x273449],
-               [-30,-10,-22,-10,0x4a4036],[10,30,-22,-10,0x1f3a4a],[-30,-10,10,22,0x374151],[10,30,10,22,0x6b7280]];
+               [-30,-10,-22,-10,0x1e293b],[10,30,-22,-10,0x1f3a4a],[-30,-10,10,22,0xcbd5e1],[-50,-30,10,22,0x1f2937],[10,30,10,22,0x6b7280]];
   for(const [x0,x1,z0,z1,c] of rooms){
     const f=new THREE.Mesh(new THREE.PlaneGeometry(x1-x0,z1-z0),new THREE.MeshLambertMaterial({color:c}));
     f.rotation.x=-Math.PI/2;f.position.set(FX+(x0+x1)/2,0.03,FZ+(z0+z1)/2);f.receiveShadow=true;facGroup.add(f);
@@ -365,7 +366,7 @@ function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.
   facReadouts.push({cv:wallCv,tex:wallTex,draw:drawCodeScreen});
   // the same code screen in every room (they all share one texture)
   const codeMat=wallMesh.material;
-  for(const [lx,lz,rot] of [[6,10.32,0],[6,-10.32,Math.PI],[-10.32,6,-Math.PI/2],[10.32,-6,Math.PI/2],[-26,-10.32,Math.PI],[26,-10.32,Math.PI],[-26,10.32,0],[26,10.32,0]]){
+  for(const [lx,lz,rot] of [[6,10.32,0],[6,-10.32,Math.PI],[-10.32,6,-Math.PI/2],[10.32,-6,Math.PI/2],[-26,-10.32,Math.PI],[26,-10.32,Math.PI],[-26,10.32,0],[26,10.32,0],[-40,10.32,0]]){
     const sc=new THREE.Mesh(new THREE.PlaneGeometry(3.2,1.2),codeMat);
     if(Math.abs(rot)===Math.PI/2)sc.position.set(FX+lx,3.2,FZ+lz);else sc.position.set(FX+lx,3.2,FZ+lz);
     sc.rotation.y=rot;facGroup.add(sc);
@@ -469,11 +470,30 @@ function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.
   const powLight=new THREE.PointLight(0xff9a3c,.9,6.5);powLight.position.set(FX+26.5,3.2,FZ);facGroup.add(powLight);
   facAnims.push(t=>{const k=.55+.45*Math.sin(t*2.2);bandMat.color.setRGB(1*k,.6*k,.24*k);powLight.intensity=.7+.3*k});
 
-  // ---------- ARCHIVE (north-west) ----------
-  shelf(-27,-21.1,3.6,true,1);shelf(-23,-21.1,3.6,true,1);shelf(-15,-21.1,6,true,1);
-  shelf(-29.1,-17,4,false,1);shelf(-29.1,-12.5,3,false,1);shelf(-25.5,-15.5,4,true,1);
-  sign('ARCHIVE',3.6,-29.68,4.3,-16,Math.PI/2,'#fbbf24');
+  // ---------- SAFE ROOM (north-west) ----------
+  function couch(lx,lz,rotY,col){
+    const g=new THREE.Group();g.position.set(FX+lx,0,FZ+lz);g.rotation.y=rotY;facGroup.add(g);
+    const part=(w,h,d,x,y,z)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshLambertMaterial({color:col}));m.position.set(x,y,z);m.castShadow=true;g.add(m)};
+    part(2.2,.4,.9,0,.25,0);part(2.2,.55,.2,0,.7,-.35);part(.2,.5,.9,-1.1,.45,0);part(.2,.5,.9,1.1,.45,0);
+    boxes.push({obb:true,cx:FX+lx,cz:FZ+lz,hw:1.2,hd:.5,c:Math.cos(rotY),s:Math.sin(rotY),h:3});
+  }
+  const rug=new THREE.Mesh(new THREE.PlaneGeometry(8,6),new THREE.MeshLambertMaterial({color:0x155e75}));
+  rug.rotation.x=-Math.PI/2;rug.position.set(FX-25.5,.04,FZ-16.4);facGroup.add(rug);
+  couch(-26,-13.6,Math.PI,0x0f766e);couch(-26,-19.2,0,0x0f766e);
+  cyl(.8,.8,.4,0x1e293b,-26,.2,-16.4,.9);cyl(.55,.55,.04,basicM(0x22d3ee),-26,.42,-16.4,0);
+  B(1,1,1,0x78350f,-28.6,.5,-21.0,true);B(1,1,1,0x92400e,-27.4,.5,-21.0,true);B(1,1,1,0x78350f,-28,1.5,-21.0,false);
+  for(const x of [-22.6,-21.6,-20.6,-19.6])B(.9,2.1,.6,0x475569,x,1.05,-21.4,true);
+  // vault door on the west wall
+  const vault=new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.1,.2,32),new THREE.MeshLambertMaterial({color:0x64748b}));
+  vault.rotation.z=Math.PI/2;vault.position.set(FX-29.55,2.2,FZ-16);facGroup.add(vault);
+  const vwheel=new THREE.Mesh(new THREE.TorusGeometry(.5,.05,8,24),new THREE.MeshLambertMaterial({color:0xcbd5e1}));
+  vwheel.rotation.y=Math.PI/2;vwheel.position.set(FX-29.4,2.2,FZ-16);facGroup.add(vwheel);
+  const vlamp=new THREE.Mesh(new THREE.CylinderGeometry(.08,.08,.06,12),basicM(0x4ade80));vlamp.rotation.z=Math.PI/2;vlamp.position.set(FX-29.4,3.2,FZ-16);facGroup.add(vlamp);
+  // cool blue neon
+  B(18,.08,.08,basicM(0x22d3ee),-20,4.5,-21.6,false);B(.08,.08,10,basicM(0x22d3ee),-29.6,4.5,-16,false);B(18,.08,.08,basicM(0x22d3ee),-20,4.5,-10.4,false);
+  sign('SAFE ROOM',3.8,-29.68,4.3,-16,Math.PI/2,'#2dd4bf');
   strip(-20,-16,.5,10,4.95);
+  const coolLight=new THREE.PointLight(0x38bdf8,.7,5.5);coolLight.position.set(FX-20,3.4,FZ-16);facGroup.add(coolLight);
 
   // ---------- COOLING PLANT (north-east) ----------
   const tankMat=new THREE.MeshLambertMaterial({color:0x7dd3fc,emissive:0x0c4a6e});
@@ -504,14 +524,39 @@ function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.
   let pumpT=0;
   facAnims.push(t=>{const dt=Math.min(.1,Math.max(0,t-pumpT));pumpT=t;pumpFans.forEach((f,i)=>{if(coreState.pm[i])f.rotation.z+=dt*12})});
 
-  // ---------- LAB (south-west) ----------
-  B(3,1,1.1,0x9a7b4f,-27,.5,21,true);B(3,1,1.1,0x9a7b4f,-23,.5,21,true);B(1.1,1,3,0x9a7b4f,-29,.5,13.5,true);
-  for(const x of [-27.5,-23.5]){const m=new THREE.Mesh(new THREE.PlaneGeometry(.9,.55),basicM(0x4ade80));m.position.set(FX+x,1.35,FZ+20.6);facGroup.add(m)}
-  cyl(1,1.1,.9,0x374151,-25,.45,15.5,1.2);cyl(.9,.9,.05,basicM(0x22d3ee),-25,.93,15.5,0);
-  const holo=new THREE.Mesh(new THREE.OctahedronGeometry(.6),basicM(0x67e8f9,{wireframe:true}));holo.position.set(FX-25,1.9,FZ+15.5);facGroup.add(holo);
-  sign('LAB',2.4,-29.68,4.3,16,Math.PI/2,'#a78bfa');
+  // ---------- MEDIC ROOM (south-west) ----------
+  for(const bx of [-27.5,-24.5,-21.5]){ // hospital beds along the south wall
+    B(1.0,.45,2.0,0xe5e7eb,bx,.33,20.5,true);B(.92,.16,1.9,0xffffff,bx,.64,20.5,false);
+    B(.6,.12,.4,0xbfdbfe,bx,.78,21.2,false);B(1.0,.8,.1,0xcbd5e1,bx,.7,21.55,false);
+  }
+  B(1.6,2.1,.5,0xf8fafc,-27,1.05,10.6,true);B(1.6,2.1,.5,0xf8fafc,-13.5,1.05,10.6,true);
+  B(1.4,1.5,.02,0x93c5fd,-27,1.15,10.87,false);B(1.4,1.5,.02,0x93c5fd,-13.5,1.15,10.87,false);
+  B(2,.9,.8,0xcbd5e1,-14,.45,19.6,true);B(.4,.12,.3,0xf8fafc,-14,.96,19.6,false);
+  B(.28,.03,.08,0xdc2626,-14,1.03,19.6,false);B(.08,.03,.28,0xdc2626,-14,1.03,19.6,false);
+  for(const mx of [-26,-23]){ // heart monitors between the beds
+    const m=new THREE.Mesh(new THREE.PlaneGeometry(.8,.5),facScreens.mats[si%3]);
+    m.position.set(FX+mx,1.7,FZ+21.68);m.rotation.y=Math.PI;facGroup.add(m);facScreens.push({m,i:si++});
+  }
+  cyl(.03,.03,2.1,0x9ca3af,-26,1.05,19.0,0);B(.12,.2,.05,0xbfdbfe,-26,1.9,19.0,false);
+  // red cross on the west wall
+  const crossM=basicM(0xdc2626);
+  for(const [w,h] of [[.35,1.1],[1.1,.35]]){const c=new THREE.Mesh(new THREE.PlaneGeometry(w,h),crossM);c.position.set(FX-29.66,3.0,FZ+12);c.rotation.y=Math.PI/2;facGroup.add(c)}
+  sign('MEDIC ROOM',3.6,-29.68,4.3,16,Math.PI/2,'#f87171');
   strip(-20,16,.5,10,4.95);
-  facAnims.push(t=>{holo.rotation.y=t*.9;holo.rotation.x=t*.5;holo.position.y=1.9+Math.sin(t*2)*.1});
+
+  // ---------- SECURITY ROOM (west of the medic room) ----------
+  B(.2,2.9,8.2,0x0b1220,-49.6,2.6,16,false); // CCTV wall
+  let ci=0;
+  for(const y of [2.05,3.35])for(const z of [13,15,17,19]){
+    const m=new THREE.Mesh(new THREE.PlaneGeometry(1.8,1.2),facScreens.mats[ci%3]);
+    m.position.set(FX-49.48,y,FZ+z);m.rotation.y=Math.PI/2;facGroup.add(m);facScreens.push({m,i:ci++});
+  }
+  B(3.4,.9,1.1,0x374151,-43,.45,16,true);B(.6,.6,.6,0x111827,-41.6,.3,16,false);
+  for(const z of [15.2,16.8]){const m=new THREE.Mesh(new THREE.PlaneGeometry(1,.6),basicM(0x38bdf8));m.position.set(FX-43.3,1.35,FZ+z);m.rotation.y=Math.PI/2;facGroup.add(m)}
+  for(const x of [-47,-45.9,-44.8,-43.7])B(.9,2.1,.6,0x475569,x,1.05,10.6,true); // lockers
+  B(2.4,1.9,.5,0x1f2937,-38,.95,21.4,true);B(2.2,1.5,.02,0x1e3a5f,-38,1.0,21.14,false); // gun cabinet
+  sign('SECURITY',3.2,-30.32,4.3,16,-Math.PI/2,'#f59e0b');
+  strip(-40,16,.5,10,4.95);
 
   // ---------- OFFICES (south-east) ----------
   for(const z of [13,17.5,21]){
@@ -548,12 +593,14 @@ function makeChar(shirt){
   body.material=sm;armL.children[0].material=sm;armR.children[0].material=sm;
   g.add(body,box(.5,.5,.5,0xf2c9a0,0,1.95,0),
         box(.08,.08,.02,0x222222,-.12,2.0,.26),box(.08,.08,.02,0x222222,.12,2.0,.26),armL,armR,legL,legR);
-  const pg=new THREE.Mesh(new THREE.BoxGeometry(.08,.3,.1),new THREE.MeshLambertMaterial({color:0x1f2937}));pg.position.set(0,-.95,0);armR.add(pg);
+  const pg=new THREE.Group(),gcol=c=>new THREE.MeshLambertMaterial({color:c});
+  for(const [w,h,d,c,x,y,z] of [[.07,.3,.075,0x4b5563,0,-1.0,0],[.055,.22,.06,0x1f2937,0,-.9,-.05],[.06,.07,.16,0x1f2937,0,-.9,-.13],[.035,.07,.035,0x0b1220,0,-1.16,0]]){
+    const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),gcol(c));m.position.set(x,y,z);pg.add(m);
+  }
+  armR.add(pg);
   const cardMat=new THREE.MeshBasicMaterial({color:0xf8fafc,side:THREE.DoubleSide});
   const cdm=new THREE.Mesh(new THREE.PlaneGeometry(.62,.39),cardMat);cdm.position.set(.22,1.42,.85);cdm.visible=false;g.add(cdm); // the ID card, held out in front
-  const kit=new THREE.Mesh(new THREE.BoxGeometry(.2,.14,.12),new THREE.MeshLambertMaterial({color:0xf8fafc}));kit.position.set(0,-.9,0);kit.visible=false;armR.add(kit);
-  for(const [w,h] of [[.14,.04],[.04,.1]]){const cr=new THREE.Mesh(new THREE.BoxGeometry(w,h,.13),new THREE.MeshLambertMaterial({color:0xdc2626}));kit.add(cr)}
-  g.userData={armL,armR,legL,legR,sm,gun:pg,card:cdm,cardMat,kit};
+  g.userData={armL,armR,legL,legR,sm,gun:pg,card:cdm,cardMat};
   return g;
 }
 function animChar(g,walkT,moving,air){
@@ -561,10 +608,10 @@ function animChar(g,walkT,moving,air){
   u.legL.rotation.x=sw;u.legR.rotation.x=-sw;u.armL.rotation.x=-sw;u.armR.rotation.x=sw;
   if(air){u.armL.rotation.x=u.armR.rotation.x=-2.4;u.legL.rotation.x=.3;u.legR.rotation.x=-.3}
   const sl=u.sl|0;
-  u.gun.visible=sl===0;u.card.visible=sl===2;u.kit.visible=sl===3;
+  u.gun.visible=sl===0;u.card.visible=sl===2;
   if(performance.now()-(u.punchT||-1e9)<260)u.armR.rotation.x=-1.7; // punching
-  else if(sl===0)u.armR.rotation.x=-1.35; // aiming the pistol
-  else if(sl===2||sl===3)u.armR.rotation.x=-.9; // holding up the ID card / medkit
+  else if(sl===0)u.armR.rotation.x=-1.5; // aiming the pistol straight ahead
+  else if(sl===2)u.armR.rotation.x=-.9; // holding up the ID card
 }
 const SWATCHES=['#3b82f6','#ef4444','#22c55e','#eab308','#a855f7','#f97316','#ec4899','#14b8a6','#f8fafc','#111827'];
 let myColor=parseInt(SWATCHES[Math.floor(Math.random()*SWATCHES.length)].slice(1),16);
@@ -578,7 +625,7 @@ const keys={};
 addEventListener('keydown',e=>{
   if(!started||dead)return;
   if(e.code==='KeyR'&&!e.repeat){reload();return}
-  if(/^Digit[1-4]$/.test(e.code)){selectSlot(+e.code.slice(5)-1);return}
+  if(/^Digit[1-3]$/.test(e.code)){selectSlot(+e.code.slice(5)-1);return}
   if(e.code==='KeyE'&&!e.repeat){if(!paused&&aimBtn&&slot===1)pressBtn(aimBtn);return}
   if(e.code==='KeyC'&&!e.repeat){setPanel(!paused);return}
   if(paused){if(e.code==='Escape')setPanel(false);return}
@@ -622,7 +669,7 @@ cv.addEventListener('pointerup',e=>{
   }
 });
 cv.addEventListener('pointercancel',endLook);
-cv.addEventListener('wheel',e=>{if(started&&!dead)selectSlot((slot+(e.deltaY>0?1:3))%4);e.preventDefault()},{passive:false});
+cv.addEventListener('wheel',e=>{if(started&&!dead)selectSlot((slot+(e.deltaY>0?1:2))%3);e.preventDefault()},{passive:false});
 
 // Touch controls
 const joy=document.getElementById('joy'),knob=document.getElementById('knob'),jumpB=document.getElementById('jump');
@@ -651,7 +698,7 @@ addEventListener('resize',()=>{
 
 // Multiplayer (Socket.io, served by the same Node server)
 const remotes=new Map();let socket=null,sendAcc=0;const countEl=document.getElementById('count');
-const BUILD=8;
+const BUILD=9;
 function updateCount(){countEl.textContent=(remotes.size+1)+' player'+(remotes.size?'s':'')+' online \u00b7 build '+BUILD}
 updateCount();
 function sendPresence(dt){
@@ -921,7 +968,7 @@ function resolveObb(b){ // push the player out of a rotated box
   player.position.x=b.cx+nx*b.c+nz*b.s;
   player.position.z=b.cz-nx*b.s+nz*b.c;
 }
-function insideFacility(){return Math.abs(player.position.x-FX)<31&&Math.abs(player.position.z-FZ)<23}
+function insideFacility(){return player.position.x>FX-51&&player.position.x<FX+31&&Math.abs(player.position.z-FZ)<23}
 function throwOut(){player.position.set(FX+(Math.random()-.5)*10,0,FZ+32);vel.set(0,0,0)}
 function initExplosion(){
   exFx.orig=facGroup.children.map(m=>{
@@ -1046,9 +1093,14 @@ const gunRay=new THREE.Raycaster();gunRay.far=150;
 // first-person pistol (drawn on top so it never clips into walls)
 const gun=new THREE.Group(),gmat=c=>new THREE.MeshBasicMaterial({color:c,depthTest:false});
 function gunPart(w,h,d,c,x,y,z,rx){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),gmat(c));m.position.set(x,y,z);if(rx)m.rotation.x=rx;m.renderOrder=999;gun.add(m)}
-gunPart(.07,.08,.34,0x4b5563,0,0,0);gunPart(.035,.035,.1,0x111827,0,.005,-.2);gunPart(.06,.17,.08,0x78350f,0,-.11,.1,.25);gunPart(.02,.03,.02,0xe5e7eb,0,.055,.12);
+gunPart(.052,.062,.30,0x4b5563,0,.045,-.05);gunPart(.05,.04,.24,0x1f2937,0,0,-.02);gunPart(.028,.028,.07,0x0b1220,0,.045,-.235);
+gunPart(.046,.15,.075,0x1f2937,0,-.085,.075,.28);gunPart(.03,.012,.07,0x111827,0,-.035,.02);
+gunPart(.014,.016,.014,0xe5e7eb,0,.082,.07);gunPart(.014,.016,.014,0xe5e7eb,0,.082,-.17);
+gunPart(.085,.1,.1,0xf2c9a0,0,-.085,.09);gunPart(.025,.035,.09,0xf2c9a0,-.045,-.005,.05);
+const sleeveM=gmat(0x3b82f6),sleeve=new THREE.Mesh(new THREE.BoxGeometry(.1,.1,.5),sleeveM);
+sleeve.position.set(.03,-.16,.42);sleeve.rotation.x=-.2;sleeve.renderOrder=999;gun.add(sleeve);
 const flashSpr=new THREE.Sprite(new THREE.SpriteMaterial({map:fireTex,transparent:true,depthTest:false,blending:THREE.AdditiveBlending,fog:false}));
-flashSpr.scale.set(.28,.28,1);flashSpr.position.set(0,.01,-.32);flashSpr.renderOrder=1000;flashSpr.visible=false;gun.add(flashSpr);
+flashSpr.scale.set(.22,.22,1);flashSpr.position.set(0,.045,-.3);flashSpr.renderOrder=1000;flashSpr.visible=false;gun.add(flashSpr);
 scene.add(camera);camera.add(gun);gun.visible=false;
 
 function rayBox(ox,oy,oz,dx,dy,dz,x0,x1,y0,y1,z0,z1){
@@ -1126,10 +1178,9 @@ function tryFire(){
   const end=o.clone().addScaledVector(dir,hit?pd:bd);
   if(socket&&socket.connected)socket.emit('shoot',{o:[o.x,o.y,o.z],d:[dir.x,dir.y,dir.z],hit:hit?pid:undefined,head:hit&&head?1:0});
   camera.updateMatrixWorld(true);
-  tracer(camera.localToWorld(new THREE.Vector3(.26,-.22,-.9)),end);
+  tracer(camera.localToWorld(new THREE.Vector3(.17,-.14,-.82)),end);
   gunRec=1;flashT=.06;playShot(.7);
 }
-function healFlash(){const e=document.getElementById('healfx');e.style.transition='none';e.style.opacity=1;requestAnimationFrame(()=>requestAnimationFrame(()=>{e.style.transition='';e.style.opacity=0}))}
 function hurtFlash(){hurtEl.style.transition='none';hurtEl.style.opacity=1;requestAnimationFrame(()=>requestAnimationFrame(()=>{hurtEl.style.transition='';hurtEl.style.opacity=0}))}
 function bindWeaponEvents(sk){
   sk.on('shot',(id,o,d)=>{
@@ -1140,8 +1191,7 @@ function bindWeaponEvents(sk){
   sk.on('hurt',m=>{hp=m.hp;updateHud();hurtFlash()});
   sk.on('hitmark',m=>{xhEl.classList.add('hit');setTimeout(()=>xhEl.classList.remove('hit'),m.kill?400:150)});
   sk.on('killed',m=>killPlayer({dx:m.dx,dz:m.dz}));
-  sk.on('hp',v=>{const prev=hp,up=v>prev&&prev>0;hp=v;updateHud();if(up)healFlash()});
-  sk.on('healed',()=>{xhEl.classList.add('heal');setTimeout(()=>xhEl.classList.remove('heal'),250)});
+  sk.on('hp',v=>{hp=v;updateHud()});
   sk.on('punched',id=>{const r=remotes.get(id);if(r)r.g.userData.punchT=performance.now()});
 }
 // ---- hotbar: 1 = pistol, 2 = hands, 3 = ID card ----
@@ -1189,7 +1239,7 @@ function updateIdCard(){
 function updateSlots(){
   document.querySelectorAll('.slot').forEach(el=>el.classList.toggle('on',+el.dataset.s===slot));
   if(slot===2){updateIdCard();idCardEl.style.display='block'}else idCardEl.style.display='none';
-  fireBtn.textContent=slot===0?'FIRE':slot===1?'PUNCH':'HEAL';
+  fireBtn.textContent=slot===0?'FIRE':'PUNCH';
   updateHud();
 }
 function selectSlot(n){if(n===slot)return;slot=n;fireHeld=false;updateSlots()}
@@ -1207,32 +1257,17 @@ function punch(){
   if(socket&&socket.connected)socket.emit('punch',{hit:pid});
   playShot(.2);
 }
-const healRay=new THREE.Raycaster();healRay.far=3.2;
-let lastHeal=0;
-function heal(){ // medkit: heal the teammate you're looking at
-  const now=performance.now();if(now-lastHeal<1000)return;lastHeal=now;punchAnim=1;
-  healRay.setFromCamera({x:0,y:0},camera);
-  const groups=[];for(const r of remotes.values())if(r.g.visible&&!r.rag&&r.team===myTeam)groups.push(r.g);
-  const hits=healRay.intersectObjects(groups,true);
-  if(!hits.length)return;
-  let ob=hits[0].object;while(ob&&ob.userData.pid===undefined)ob=ob.parent;
-  if(ob&&hits[0].distance<=blockDist(healRay.ray.origin,healRay.ray.direction,3.2)&&socket&&socket.connected)socket.emit('heal',{hit:ob.userData.pid});
-}
-const kitVm=new THREE.Group();
-for(const [w,h,d,c,x,y] of [[.18,.13,.09,0xf8fafc,0,0],[.12,.035,.1,0xdc2626,0,0],[.035,.09,.1,0xdc2626,0,0]]){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),gmat(c));m.position.set(x,y,0);m.renderOrder=999;kitVm.add(m)}
-camera.add(kitVm);kitVm.visible=false;
 function primary(){ // what a click does depends on what you're holding
   if(!started||paused||dead)return;
   if(slot===0){fireHeld=true;tryFire()}                       // pistol: only shoots, never presses buttons
   else if(slot===1){if(aimBtn)pressBtn(aimBtn);else punch()}   // hands: press the button you aim at, otherwise punch
-  else if(slot===3)heal();                                      // medkit: heal a teammate
 }
 function weaponTick(dt){
   const show=started&&!dead&&!paused;
-  gun.visible=show&&slot===0;fist.visible=show&&slot===1;kitVm.visible=show&&slot===3;kitVm.position.set(.3,-.3,-.5-punchAnim*.3);
+  gun.visible=show&&slot===0;fist.visible=show&&slot===1;
   if(gunRec>0)gunRec=Math.max(0,gunRec-dt*7);
   if(punchAnim>0)punchAnim=Math.max(0,punchAnim-dt*5);
-  gun.position.set(.26,-.25,-.55+gunRec*.07);gun.rotation.x=gunRec*.3;
+  gun.position.set(.17,-.2,-.5+gunRec*.07);gun.rotation.set(gunRec*.3,-.05,0);sleeveM.color.setHex(myColor);
   fist.position.set(0,-.3,-.5-punchAnim*.34);
   if(flashT>0)flashT-=dt;flashSpr.visible=flashT>0&&slot===0;
   if(fireHeld&&slot===0)tryFire();
