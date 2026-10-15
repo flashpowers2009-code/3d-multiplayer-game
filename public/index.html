@@ -550,7 +550,7 @@ function makeChar(shirt){
         box(.08,.08,.02,0x222222,-.12,2.0,.26),box(.08,.08,.02,0x222222,.12,2.0,.26),armL,armR,legL,legR);
   const pg=new THREE.Mesh(new THREE.BoxGeometry(.08,.3,.1),new THREE.MeshLambertMaterial({color:0x1f2937}));pg.position.set(0,-.95,0);armR.add(pg);
   const cardMat=new THREE.MeshBasicMaterial({color:0xf8fafc,side:THREE.DoubleSide});
-  const cdm=new THREE.Mesh(new THREE.PlaneGeometry(.62,.39),cardMat);cdm.position.set(.38,1.35,.45);cdm.visible=false;g.add(cdm); // the ID card, held out in front
+  const cdm=new THREE.Mesh(new THREE.PlaneGeometry(.62,.39),cardMat);cdm.position.set(.22,1.42,.85);cdm.visible=false;g.add(cdm); // the ID card, held out in front
   const kit=new THREE.Mesh(new THREE.BoxGeometry(.2,.14,.12),new THREE.MeshLambertMaterial({color:0xf8fafc}));kit.position.set(0,-.9,0);kit.visible=false;armR.add(kit);
   for(const [w,h] of [[.14,.04],[.04,.1]]){const cr=new THREE.Mesh(new THREE.BoxGeometry(w,h,.13),new THREE.MeshLambertMaterial({color:0xdc2626}));kit.add(cr)}
   g.userData={armL,armR,legL,legR,sm,gun:pg,card:cdm,cardMat,kit};
@@ -651,7 +651,7 @@ addEventListener('resize',()=>{
 
 // Multiplayer (Socket.io, served by the same Node server)
 const remotes=new Map();let socket=null,sendAcc=0;const countEl=document.getElementById('count');
-const BUILD=7;
+const BUILD=8;
 function updateCount(){countEl.textContent=(remotes.size+1)+' player'+(remotes.size?'s':'')+' online \u00b7 build '+BUILD}
 updateCount();
 function sendPresence(dt){
