@@ -198,7 +198,7 @@ setInterval(() => {
 const coreMsg = () => ({ t: Math.round(core.temp), cl: core.cl, ht: core.ht, by: core.by, pm: core.pm, ex: core.ex, cd: core.melt ? Math.max(0, Math.ceil((core.meltAt - Date.now()) / 1000)) : 0 });
 setInterval(() => { if (online.size) io.emit('core', coreMsg()); }, 250);
 // ---- Pistols (PvP) ----
-const GUN = { DMG: 20, HEAD: 40, RANGE: 150, COOLDOWN: 180, SPAWN_PROTECTION: 3000 };
+const GUN = { DMG: 20, HEAD: 40, RANGE: 150, COOLDOWN: 180, SPAWN_PROTECTION: 3000, PUNCH: 10, PUNCH_COOLDOWN: 400, PUNCH_RANGE: 4 };
 const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
 
 io.use(async (socket, next) => {
@@ -206,7 +206,9 @@ io.use(async (socket, next) => {
     const key = verify(socket.handshake.auth && socket.handshake.auth.token);
     const user = key && (await store.get(key));
     if (!user) return next(new Error('auth'));
-    socket.account = { key, username: user.username, color: user.color };
+    // team comes from the lobby: 0 = facility worker, 1 = rebel
+    const team = socket.handshake.auth && socket.handshake.auth.team === 1 ? 1 : 0;
+    socket.account = { key, username: user.username, color: user.color, team };
     next();
   } catch (_) { next(new Error('auth')); }
 });
@@ -219,7 +221,7 @@ io.on('connection', (socket) => {
   const prev = online.get(key);
   if (prev) { prev.emit('kicked'); prev.disconnect(true); }
   online.set(key, socket);
-  socket.hp = 100; socket.dead = false; socket.protUntil = 0; socket.lastShot = 0;
+  socket.hp = 100; socket.dead = false; socket.protUntil = 0; socket.lastShot = 0; socket.lastPunch = 0;
 
   socket.emit('currentPlayers', players);
   socket.emit('core', coreMsg());
@@ -234,6 +236,8 @@ io.on('connection', (socket) => {
       z: Math.max(-100, Math.min(100, num(d.z))),
       r: num(d.r),
       dd: d.dd ? 1 : 0, // 1 while the player is dead (others hide their body)
+      tm: socket.account.team,
+      sl: Number.isInteger(d.sl) && d.sl >= 0 && d.sl <= 2 ? d.sl : 0, // which hotbar slot they're holding
       // while dead, the dying player streams their ragdoll pose: [x, y, z, rotX, rotY, rotZ, landed]
       rg: d.dd && Array.isArray(d.rg) && d.rg.length === 7
         ? d.rg.map((v, i) => (i < 3 ? Math.max(-150, Math.min(150, num(v))) : num(v)))
@@ -244,29 +248,45 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('serverUpdate', socket.id, players[socket.id]);
   });
 
-  // Shooting: the shooter's client says what it hit; the server checks it and applies the damage
+  // Shooting and punching: the attacker's client says what it hit; the server checks it and applies the damage
   const vec3 = (a) => Array.isArray(a) && a.length === 3 ? a.map(num) : null;
+  const targetOf = (id, maxDist, now) => {
+    if (typeof id !== 'string') return null;
+    const target = io.sockets.sockets.get(id);
+    if (!target || target === socket || target.dead || now < target.protUntil) return null;
+    if (target.account.team === socket.account.team) return null; // no friendly fire
+    const sp = players[socket.id], tp = players[id];
+    if (!sp || !tp || Math.hypot(sp.x - tp.x, sp.z - tp.z) > maxDist) return null;
+    return { target, dx: tp.x - sp.x, dz: tp.z - sp.z };
+  };
+  const damage = (hit, dmg) => {
+    const target = hit.target;
+    target.hp -= dmg;
+    const dead = target.hp <= 0;
+    target.emit('hurt', { hp: Math.max(0, target.hp) });
+    socket.emit('hitmark', { kill: dead });
+    if (dead) {
+      target.dead = true;
+      target.emit('killed', { by: username, dx: hit.dx, dz: hit.dz });
+      io.emit('feed', { k: username, v: target.account.username });
+    }
+  };
   socket.on('shoot', (d) => {
     const now = Date.now();
     if (!d || socket.dead || now - socket.lastShot < GUN.COOLDOWN) return;
     socket.lastShot = now;
     const o = vec3(d.o), dir = vec3(d.d);
     if (o && dir) socket.broadcast.volatile.emit('shot', socket.id, o, dir);
-    if (typeof d.hit !== 'string') return;
-    const target = io.sockets.sockets.get(d.hit);
-    if (!target || target === socket || target.dead || now < target.protUntil) return;
-    const sp = players[socket.id], tp = players[d.hit];
-    if (!sp || !tp || Math.hypot(sp.x - tp.x, sp.z - tp.z) > GUN.RANGE) return;
-    target.hp -= d.head ? GUN.HEAD : GUN.DMG;
-    const dx = tp.x - sp.x, dz = tp.z - sp.z;
-    const dead = target.hp <= 0;
-    target.emit('hurt', { hp: Math.max(0, target.hp) });
-    socket.emit('hitmark', { kill: dead });
-    if (dead) {
-      target.dead = true;
-      target.emit('killed', { by: username, dx, dz });
-      io.emit('feed', { k: username, v: target.account.username });
-    }
+    const hit = targetOf(d.hit, GUN.RANGE, now);
+    if (hit) damage(hit, d.head ? GUN.HEAD : GUN.DMG);
+  });
+  socket.on('punch', (d) => {
+    const now = Date.now();
+    if (!d || socket.dead || now - socket.lastPunch < GUN.PUNCH_COOLDOWN) return;
+    socket.lastPunch = now;
+    socket.broadcast.volatile.emit('punched', socket.id);
+    const hit = targetOf(d.hit, GUN.PUNCH_RANGE, now);
+    if (hit) damage(hit, GUN.PUNCH);
   });
   socket.on('respawned', () => {
     socket.hp = 100; socket.dead = false; socket.protUntil = Date.now() + GUN.SPAWN_PROTECTION;
