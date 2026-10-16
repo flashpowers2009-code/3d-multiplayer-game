@@ -470,30 +470,26 @@ function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.
   const powLight=new THREE.PointLight(0xff9a3c,.9,6.5);powLight.position.set(FX+26.5,3.2,FZ);facGroup.add(powLight);
   facAnims.push(t=>{const k=.55+.45*Math.sin(t*2.2);bandMat.color.setRGB(1*k,.6*k,.24*k);powLight.intensity=.7+.3*k});
 
-  // ---------- SAFE ROOM (north-west) ----------
-  function couch(lx,lz,rotY,col){
-    const g=new THREE.Group();g.position.set(FX+lx,0,FZ+lz);g.rotation.y=rotY;facGroup.add(g);
-    const part=(w,h,d,x,y,z)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshLambertMaterial({color:col}));m.position.set(x,y,z);m.castShadow=true;g.add(m)};
-    part(2.2,.4,.9,0,.25,0);part(2.2,.55,.2,0,.7,-.35);part(.2,.5,.9,-1.1,.45,0);part(.2,.5,.9,1.1,.45,0);
-    boxes.push({obb:true,cx:FX+lx,cz:FZ+lz,hw:1.2,hd:.5,c:Math.cos(rotY),s:Math.sin(rotY),h:3});
-  }
-  const rug=new THREE.Mesh(new THREE.PlaneGeometry(8,6),new THREE.MeshLambertMaterial({color:0x155e75}));
-  rug.rotation.x=-Math.PI/2;rug.position.set(FX-25.5,.04,FZ-16.4);facGroup.add(rug);
-  couch(-26,-13.6,Math.PI,0x0f766e);couch(-26,-19.2,0,0x0f766e);
-  cyl(.8,.8,.4,0x1e293b,-26,.2,-16.4,.9);cyl(.55,.55,.04,basicM(0x22d3ee),-26,.42,-16.4,0);
-  B(1,1,1,0x78350f,-28.6,.5,-21.0,true);B(1,1,1,0x92400e,-27.4,.5,-21.0,true);B(1,1,1,0x78350f,-28,1.5,-21.0,false);
-  for(const x of [-22.6,-21.6,-20.6,-19.6])B(.9,2.1,.6,0x475569,x,1.05,-21.4,true);
-  // vault door on the west wall
-  const vault=new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.1,.2,32),new THREE.MeshLambertMaterial({color:0x64748b}));
-  vault.rotation.z=Math.PI/2;vault.position.set(FX-29.55,2.2,FZ-16);facGroup.add(vault);
-  const vwheel=new THREE.Mesh(new THREE.TorusGeometry(.5,.05,8,24),new THREE.MeshLambertMaterial({color:0xcbd5e1}));
-  vwheel.rotation.y=Math.PI/2;vwheel.position.set(FX-29.4,2.2,FZ-16);facGroup.add(vwheel);
-  const vlamp=new THREE.Mesh(new THREE.CylinderGeometry(.08,.08,.06,12),basicM(0x4ade80));vlamp.rotation.z=Math.PI/2;vlamp.position.set(FX-29.4,3.2,FZ-16);facGroup.add(vlamp);
-  // cool blue neon
-  B(18,.08,.08,basicM(0x22d3ee),-20,4.5,-21.6,false);B(.08,.08,10,basicM(0x22d3ee),-29.6,4.5,-16,false);B(18,.08,.08,basicM(0x22d3ee),-20,4.5,-10.4,false);
-  sign('SAFE ROOM',3.8,-29.68,4.3,-16,Math.PI/2,'#2dd4bf');
+  // ---------- COOLSAFE ROOM (north-west) ----------
+  // holds the computer for the coolsafe code
+  for(const z of [-13,-15.4,-17.8,-20.2])rack(-29.0,z,1);
+  const csCv=cvs(512,320),csTex=new THREE.CanvasTexture(csCv),cx2=csCv.getContext('2d');
+  cx2.fillStyle='#050b14';cx2.fillRect(0,0,512,320);cx2.strokeStyle='#38bdf8';cx2.lineWidth=8;cx2.strokeRect(4,4,504,312);
+  cx2.textAlign='center';cx2.textBaseline='middle';
+  cx2.fillStyle='#38bdf8';cx2.font='bold 64px system-ui,sans-serif';cx2.fillText('COOLSAFE',256,100,470);
+  cx2.fillStyle='#4ade80';cx2.font='bold 42px system-ui,sans-serif';cx2.fillText('CODE ACTIVE',256,200,470);
+  const csg=new THREE.Group();csg.position.set(FX-22,0,FZ-20.5);facGroup.add(csg);
+  const csDesk=new THREE.Mesh(new THREE.BoxGeometry(3,.9,1),new THREE.MeshLambertMaterial({color:0x374151}));csDesk.position.y=.45;csDesk.castShadow=true;csg.add(csDesk);
+  const csFrame=new THREE.Mesh(new THREE.BoxGeometry(2.8,1.7,.12),new THREE.MeshLambertMaterial({color:0x111827}));csFrame.position.set(0,1.85,-.2);csFrame.rotation.x=-.2;csg.add(csFrame);
+  const csScr=new THREE.Mesh(new THREE.PlaneGeometry(2.6,1.5),new THREE.MeshBasicMaterial({map:csTex}));csScr.position.set(0,1.86,-.13);csScr.rotation.x=-.2;csg.add(csScr);
+  const csKb=new THREE.Mesh(new THREE.BoxGeometry(1.4,.04,.4),new THREE.MeshLambertMaterial({color:0x0b1220}));csKb.position.set(0,.92,.2);csg.add(csKb);
+  const csLamp=new THREE.Mesh(new THREE.BoxGeometry(.5,.14,.14),basicM(0x4ade80));csLamp.position.set(0,2.88,-.25);csg.add(csLamp);
+  boxes.push({obb:true,cx:FX-22,cz:FZ-20.5,hw:1.5,hd:.5,c:1,s:0,h:3});
+  B(.7,.7,.7,0x111827,-22,.35,-19.2,false); // chair
+  pipe(18,.18,0x64748b,-20,4.2,-12.6,'x');pipe(18,.18,0x64748b,-20,3.8,-12.6,'x');
+  sign('COOLSAFE ROOM',3.8,-29.68,4.3,-16,Math.PI/2,'#38bdf8');
+  sign('AUTHORIZED ONLY',3.6,-12,3.6,-21.68,0,'#fbbf24');
   strip(-20,-16,.5,10,4.95);
-  const coolLight=new THREE.PointLight(0x38bdf8,.7,5.5);coolLight.position.set(FX-20,3.4,FZ-16);facGroup.add(coolLight);
 
   // ---------- COOLING PLANT (north-east) ----------
   const tankMat=new THREE.MeshLambertMaterial({color:0x7dd3fc,emissive:0x0c4a6e});
@@ -594,10 +590,11 @@ function makeChar(shirt){
   g.add(body,box(.5,.5,.5,0xf2c9a0,0,1.95,0),
         box(.08,.08,.02,0x222222,-.12,2.0,.26),box(.08,.08,.02,0x222222,.12,2.0,.26),armL,armR,legL,legR);
   const pg=new THREE.Group(),gcol=c=>new THREE.MeshLambertMaterial({color:c});
-  for(const [w,h,d,c,x,y,z] of [[.07,.3,.075,0x4b5563,0,-1.0,0],[.055,.22,.06,0x1f2937,0,-.9,-.05],[.06,.07,.16,0x1f2937,0,-.9,-.13],[.035,.07,.035,0x0b1220,0,-1.16,0]]){
+  for(const [w,h,d,c,x,y,z] of [[.06,.07,.16,0x1f2937,0,-.87,-.04],[.055,.26,.045,0x1f2937,0,-1.0,.05],[.07,.32,.06,0x4b5563,0,-1.02,.1],[.035,.06,.035,0x0b1220,0,-1.2,.1]]){
     const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),gcol(c));m.position.set(x,y,z);pg.add(m);
   }
   armR.add(pg);
+  for(const arm of [armL,armR]){const hnd=new THREE.Mesh(new THREE.BoxGeometry(.2,.14,.2),gcol(0xf2c9a0));hnd.position.set(0,-.87,0);arm.add(hnd)} // hands
   const cardMat=new THREE.MeshBasicMaterial({color:0xf8fafc,side:THREE.DoubleSide});
   const cdm=new THREE.Mesh(new THREE.PlaneGeometry(.62,.39),cardMat);cdm.position.set(.22,1.42,.85);cdm.visible=false;g.add(cdm); // the ID card, held out in front
   g.userData={armL,armR,legL,legR,sm,gun:pg,card:cdm,cardMat};
@@ -698,7 +695,7 @@ addEventListener('resize',()=>{
 
 // Multiplayer (Socket.io, served by the same Node server)
 const remotes=new Map();let socket=null,sendAcc=0;const countEl=document.getElementById('count');
-const BUILD=9;
+const BUILD=10;
 function updateCount(){countEl.textContent=(remotes.size+1)+' player'+(remotes.size?'s':'')+' online \u00b7 build '+BUILD}
 updateCount();
 function sendPresence(dt){
@@ -762,6 +759,7 @@ function connect(token){
   bindWeaponEvents(socket);
   socket.on('kicked',()=>{alert('You signed in from somewhere else.');location.reload()});
   socket.on('connect_error',e=>{if(e&&e.message==='auth'){try{localStorage.removeItem('fpsToken')}catch(_){}location.reload()}});
+  socket.on('shardReset',()=>{for(const r of remotes.values()){if(r.rag)removeRagdoll(r.rag);scene.remove(r.g)}remotes.clear();updateCount()});
   socket.on('currentPlayers',list=>{for(const id in list)if(id!==socket.id)setRemote(id,list[id])});
   socket.on('serverUpdate',(id,d)=>setRemote(id,d));
   socket.on('playerLeft',id=>{const r=remotes.get(id);if(r){if(r.rag)removeRagdoll(r.rag);scene.remove(r.g);remotes.delete(id);updateCount()}});
