@@ -155,27 +155,44 @@ app.post('/api/color', auth, wrap(async (req, res) => {
   res.json({ color: c });
 }));
 
-/* ---------- Multiplayer ---------- */
-const players = {};   // socket.id -> { x, y, z, r, c, n }
-const online = new Map(); // account key -> socket
-// ---- Shared reactor core: one temperature everyone sees and controls ----
-// The core starts at 0 C and always cools by exactly 1 C per second. Each heater key that is on adds +2 C/s and
-// each cooler key that is on removes 2 C/s. The net rate is always odd (-1, +1, -3, +3...), so it can never
-// hold steady. Reaching CODE BLACK (2500 C) blows up the facility; it is rebuilt after 45 seconds.
-const EXPLODE_AT = 2500;
-const EVAC_MS = 30000;      // time to evacuate once CODE BLACK is reached
-const REBUILD_MS = 45000;
-const core = { temp: 0, cl: [false, false, false, false], ht: [false, false, false, false], by: '', ex: false, melt: false, meltAt: 0, pm: [true, true, true, true] };
-let exTimer = null, evacTimer = null;
-const resetCore = () => {
-  clearTimeout(exTimer); exTimer = null; clearTimeout(evacTimer); evacTimer = null; core.melt = false;
-  core.temp = 0; core.cl = [false, false, false, false]; core.ht = [false, false, false, false]; core.by = ''; core.ex = false; core.pm = [true, true, true, true];
-};
+/* ---------- Multiplayer: three separate servers ---------- */
+// Players are placed in one of three independent worlds, each with its own players and its own reactor core.
+// The client is never told which one it is in. Dying bans you from the world you died in, and you respawn
+// in one of the others at random. (If you are ever banned from all three, the bans are cleared.)
+const SHARDS = 3;
+const EXPLODE_AT = 2500;    // reaching CODE BLACK blows up the facility...
+const EVAC_MS = 30000;      // ...after this long to evacuate
+const REBUILD_MS = 45000;   // the facility is rebuilt this long after the explosion
 const NATURAL_COOLING = 1;  // degrees C lost per second with everything off
 const HEATER_POWER = 2;     // degrees C per second added by each heater
 const COOLER_POWER = 2;     // degrees C per second removed by each cooler
-setInterval(() => {
-  if (!online.size) { resetCore(); return; }
+const GUN = { DMG: 20, HEAD: 40, RANGE: 150, COOLDOWN: 180, SPAWN_PROTECTION: 3000, PUNCH: 10, PUNCH_COOLDOWN: 400, PUNCH_RANGE: 4 };
+// the security room (where pistols are handed out): world coordinates, a little generous
+const SEC = { x0: -51, x1: -29, z0: -36, z1: -22 };
+const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
+
+// The reactor core starts at 0 C and always cools by exactly 1 C per second. Each heater key that is on adds
+// +2 C/s and each cooler key that is on removes 2 C/s, so the net rate is always odd and can never hold steady.
+const newCore = () => ({ temp: 0, cl: [false, false, false, false], ht: [false, false, false, false], by: '', ex: false, melt: false, meltAt: 0, pm: [true, true, true, true] });
+const shards = Array.from({ length: SHARDS }, (_, i) => ({
+  id: i, room: 'shard' + i, players: {}, sockets: new Set(), core: newCore(), exTimer: null, evacTimer: null, dirty: false,
+}));
+const online = new Map(); // account key -> socket (one session per account)
+const bans = new Map();   // account key -> Set of shard ids they have died in
+
+const coreMsg = (sh) => {
+  const c = sh.core;
+  return { t: Math.round(c.temp), cl: c.cl, ht: c.ht, by: c.by, pm: c.pm, ex: c.ex, cd: c.melt ? Math.max(0, Math.ceil((c.meltAt - Date.now()) / 1000)) : 0 };
+};
+const emitCore = (sh) => io.to(sh.room).emit('core', coreMsg(sh));
+const resetCore = (sh) => {
+  clearTimeout(sh.exTimer); clearTimeout(sh.evacTimer); sh.exTimer = sh.evacTimer = null;
+  sh.core = newCore();
+};
+
+function simulate(sh) {
+  if (!sh.sockets.size) { if (sh.dirty) { resetCore(sh); sh.dirty = false; } return; } // empty world: reset
+  const core = sh.core;
   if (core.ex || core.melt) return; // evacuation countdown or exploded: the simulation is paused
   const dt = 0.1;
   const rate = -NATURAL_COOLING
@@ -186,20 +203,43 @@ setInterval(() => {
     // CODE BLACK: the meltdown can't be stopped. Players get EVAC_MS to get out, then the facility explodes.
     core.melt = true;
     core.meltAt = Date.now() + EVAC_MS;
-    io.emit('core', coreMsg());
-    evacTimer = setTimeout(() => {
+    emitCore(sh);
+    sh.evacTimer = setTimeout(() => {
       core.melt = false;
       core.ex = true;
-      io.emit('core', coreMsg());
-      exTimer = setTimeout(() => { resetCore(); io.emit('core', coreMsg()); }, REBUILD_MS);
+      emitCore(sh);
+      sh.exTimer = setTimeout(() => { resetCore(sh); emitCore(sh); }, REBUILD_MS);
     }, EVAC_MS);
   }
-}, 100);
-const coreMsg = () => ({ t: Math.round(core.temp), cl: core.cl, ht: core.ht, by: core.by, pm: core.pm, ex: core.ex, cd: core.melt ? Math.max(0, Math.ceil((core.meltAt - Date.now()) / 1000)) : 0 });
-setInterval(() => { if (online.size) io.emit('core', coreMsg()); }, 250);
-// ---- Pistols (PvP) ----
-const GUN = { DMG: 20, HEAD: 40, RANGE: 150, COOLDOWN: 180, SPAWN_PROTECTION: 3000, PUNCH: 10, PUNCH_COOLDOWN: 400, PUNCH_RANGE: 4 };
-const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
+}
+setInterval(() => { for (const sh of shards) simulate(sh); }, 100);
+setInterval(() => { for (const sh of shards) if (sh.sockets.size) emitCore(sh); }, 250);
+
+// pick a random world the player is allowed in (not one they died in, and never the one they just died in)
+function pickShard(key, avoid) {
+  const banned = bans.get(key) || new Set();
+  let options = shards.filter((s) => !banned.has(s.id) && s.id !== avoid);
+  if (!options.length) { bans.delete(key); options = shards.filter((s) => s.id !== avoid); }
+  return options[Math.floor(Math.random() * options.length)];
+}
+function leaveShard(socket) {
+  const sh = socket.shard;
+  if (!sh) return;
+  sh.sockets.delete(socket);
+  delete sh.players[socket.id];
+  socket.leave(sh.room);
+  io.to(sh.room).emit('playerLeft', socket.id);
+  socket.shard = null;
+}
+function joinShard(socket, sh) {
+  socket.shard = sh;
+  sh.sockets.add(socket);
+  sh.dirty = true;
+  socket.join(sh.room);
+  socket.emit('shardReset'); // the client forgets the previous world
+  socket.emit('currentPlayers', sh.players);
+  socket.emit('core', coreMsg(sh));
+}
 
 io.use(async (socket, next) => {
   try {
@@ -221,22 +261,23 @@ io.on('connection', (socket) => {
   const prev = online.get(key);
   if (prev) { prev.emit('kicked'); prev.disconnect(true); }
   online.set(key, socket);
-  socket.hp = 100; socket.dead = false; socket.protUntil = 0; socket.lastShot = 0; socket.lastPunch = 0;
-
-  socket.emit('currentPlayers', players);
-  socket.emit('core', coreMsg());
+  socket.hp = 100; socket.dead = false; socket.hasGun = false; socket.diedIn = null; socket.protUntil = 0; socket.lastShot = 0; socket.lastPunch = 0;
+  socket.shard = null;
+  joinShard(socket, pickShard(key, -1)); // a random world; the player is never told which
 
   socket.on('playerMovement', (d) => {
-    if (!d || typeof d !== 'object') return;
-    if (d.dd) socket.dead = true; // stays dead until the client reports 'respawned'
+    const sh = socket.shard;
+    if (!sh || !d || typeof d !== 'object') return;
+    if (d.dd && !socket.dead) { socket.dead = true; socket.diedIn = sh.id; } // stays dead until the client reports 'respawned'
     // Name and color always come from the account, never from the client
-    players[socket.id] = {
+    sh.players[socket.id] = {
       x: Math.max(-100, Math.min(100, num(d.x))),
       y: Math.max(0, Math.min(50, num(d.y))),
       z: Math.max(-100, Math.min(100, num(d.z))),
       r: num(d.r),
       dd: d.dd ? 1 : 0, // 1 while the player is dead (others hide their body)
       tm: socket.account.team,
+      gn: socket.hasGun ? 1 : 0, // whether they have a pistol
       sl: Number.isInteger(d.sl) && d.sl >= 0 && d.sl <= 2 ? d.sl : 0, // which hotbar slot they're holding
       // while dead, the dying player streams their ragdoll pose: [x, y, z, rotX, rotY, rotZ, landed]
       rg: d.dd && Array.isArray(d.rg) && d.rg.length === 7
@@ -245,16 +286,17 @@ io.on('connection', (socket) => {
       c: color,
       n: username,
     };
-    socket.broadcast.emit('serverUpdate', socket.id, players[socket.id]);
+    socket.to(sh.room).emit('serverUpdate', socket.id, sh.players[socket.id]);
   });
 
   // Shooting and punching: the attacker's client says what it hit; the server checks it and applies the damage
   const vec3 = (a) => Array.isArray(a) && a.length === 3 ? a.map(num) : null;
   const targetOf = (id, maxDist, now) => {
-    if (typeof id !== 'string') return null;
+    const sh = socket.shard;
+    if (!sh || typeof id !== 'string') return null;
     const target = io.sockets.sockets.get(id);
-    if (!target || target === socket || target.dead || now < target.protUntil) return null;
-    const sp = players[socket.id], tp = players[id];
+    if (!target || target === socket || target.shard !== sh || target.dead || now < target.protUntil) return null;
+    const sp = sh.players[socket.id], tp = sh.players[id];
     if (!sp || !tp || Math.hypot(sp.x - tp.x, sp.z - tp.z) > maxDist) return null;
     return { target, dx: tp.x - sp.x, dz: tp.z - sp.z };
   };
@@ -266,38 +308,62 @@ io.on('connection', (socket) => {
     socket.emit('hitmark', { kill: dead });
     if (dead) {
       target.dead = true;
+      target.diedIn = target.shard.id;
       target.emit('killed', { by: username, dx: hit.dx, dz: hit.dz });
     }
   };
   socket.on('shoot', (d) => {
     const now = Date.now();
-    if (!d || socket.dead || now - socket.lastShot < GUN.COOLDOWN) return;
+    if (!socket.shard || !d || socket.dead || !socket.hasGun || now - socket.lastShot < GUN.COOLDOWN) return;
     socket.lastShot = now;
     const o = vec3(d.o), dir = vec3(d.d);
-    if (o && dir) socket.broadcast.volatile.emit('shot', socket.id, o, dir);
+    if (o && dir) socket.to(socket.shard.room).volatile.emit('shot', socket.id, o, dir);
     const hit = targetOf(d.hit, GUN.RANGE, now);
     if (hit) damage(hit, d.head ? GUN.HEAD : GUN.DMG);
   });
   socket.on('punch', (d) => {
     const now = Date.now();
-    if (!d || socket.dead || now - socket.lastPunch < GUN.PUNCH_COOLDOWN) return;
+    if (!socket.shard || !d || socket.dead || now - socket.lastPunch < GUN.PUNCH_COOLDOWN) return;
     socket.lastPunch = now;
-    socket.broadcast.volatile.emit('punched', socket.id);
+    socket.to(socket.shard.room).volatile.emit('punched', socket.id);
     const hit = targetOf(d.hit, GUN.PUNCH_RANGE, now);
     if (hit) damage(hit, GUN.PUNCH);
   });
+  // Everyone spawns without a pistol; one is handed out in the security room
+  socket.on('getGun', () => {
+    const sh = socket.shard;
+    if (!sh || socket.dead || socket.hasGun || sh.core.ex) return;
+    const p = sh.players[socket.id];
+    if (!p || p.x < SEC.x0 || p.x > SEC.x1 || p.z < SEC.z0 || p.z > SEC.z1) return; // must be inside the security room
+    socket.hasGun = true;
+    socket.emit('gun');
+  });
   socket.on('respawned', () => {
+    socket.hasGun = false; // a new life starts without a pistol
     socket.hp = 100; socket.dead = false; socket.protUntil = Date.now() + GUN.SPAWN_PROTECTION;
+    if (socket.diedIn !== null && socket.shard) {
+      // you can't go back to the world you died in: ban it and respawn in another one at random
+      const died = socket.diedIn;
+      const set = bans.get(key) || new Set();
+      set.add(died);
+      bans.set(key, set);
+      socket.diedIn = null;
+      const next = pickShard(key, died);
+      leaveShard(socket);
+      joinShard(socket, next);
+    }
     socket.emit('hp', 100);
   });
 
-  // Press a cooler/heater key on the core computer, or a cooling pump switch in the cooling room (toggles it for everyone)
+  // Press a cooler/heater key on the core computer, or a cooling pump switch in the cooling room (toggles it for everyone in this world)
   let lastPress = 0;
   socket.on('pressButton', (d) => {
     const now = Date.now();
-    if (!d || core.ex || core.melt || now - lastPress < 120) return;
+    const sh = socket.shard;
+    if (!sh || !d || sh.core.ex || sh.core.melt || now - lastPress < 120) return;
     if (!['cool', 'heat', 'pump'].includes(d.type) || !Number.isInteger(d.i) || d.i < 0 || d.i > 3) return;
     lastPress = now;
+    const core = sh.core;
     if (d.type === 'pump') {
       core.pm[d.i] = !core.pm[d.i];
       if (!core.pm[d.i]) core.cl[d.i] = false; // switching a pump off shuts its cooler off too
@@ -308,7 +374,7 @@ io.on('connection', (socket) => {
       core.ht[d.i] = !core.ht[d.i];
     }
     core.by = username;
-    io.emit('core', coreMsg());
+    emitCore(sh);
   });
 
   // Change shirt color any time; saved to the account and shown to everyone
@@ -317,17 +383,17 @@ io.on('connection', (socket) => {
     if (!colorOk(c) || now - lastColorChange < 200) return;
     lastColorChange = now;
     color = c;
-    if (players[socket.id]) {
-      players[socket.id].c = c;
-      socket.broadcast.emit('serverUpdate', socket.id, players[socket.id]);
+    const sh = socket.shard;
+    if (sh && sh.players[socket.id]) {
+      sh.players[socket.id].c = c;
+      socket.to(sh.room).emit('serverUpdate', socket.id, sh.players[socket.id]);
     }
     try { await store.setColor(key, c); } catch (e) { console.error(e); }
   });
 
   socket.on('disconnect', () => {
-    delete players[socket.id];
+    leaveShard(socket);
     if (online.get(key) === socket) online.delete(key);
-    io.emit('playerLeft', socket.id);
   });
 });
 
