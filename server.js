@@ -163,6 +163,8 @@ const SHARDS = 3;
 const EXPLODE_AT = 2500;    // reaching CODE BLACK blows up the facility...
 const EVAC_MS = 30000;      // ...after this long to evacuate
 const REBUILD_MS = 45000;   // the facility is rebuilt this long after the explosion
+const BAN_MS = 15 * 60 * 1000;    // dying bans you from that world for 15 minutes
+const CORPSE_MS = 15 * 60 * 1000; // a dead body stays for 15 minutes
 const NATURAL_COOLING = 1;  // degrees C lost per second with everything off
 const HEATER_POWER = 2;     // degrees C per second added by each heater
 const COOLER_POWER = 2;     // degrees C per second removed by each cooler
@@ -175,10 +177,10 @@ const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
 // +2 C/s and each cooler key that is on removes 2 C/s, so the net rate is always odd and can never hold steady.
 const newCore = () => ({ temp: 0, cl: [false, false, false, false], ht: [false, false, false, false], by: '', ex: false, melt: false, meltAt: 0, pm: [true, true, true, true] });
 const shards = Array.from({ length: SHARDS }, (_, i) => ({
-  id: i, room: 'shard' + i, players: {}, sockets: new Set(), core: newCore(), exTimer: null, evacTimer: null, dirty: false,
+  id: i, room: 'shard' + i, players: {}, sockets: new Set(), core: newCore(), exTimer: null, evacTimer: null, dirty: false, corpses: [],
 }));
 const online = new Map(); // account key -> socket (one session per account)
-const bans = new Map();   // account key -> Set of shard ids they have died in
+const bans = new Map();   // account key -> Map of shard id -> time the ban ends
 
 const coreMsg = (sh) => {
   const c = sh.core;
@@ -217,11 +219,33 @@ setInterval(() => { for (const sh of shards) if (sh.sockets.size) emitCore(sh); 
 
 // pick a random world the player is allowed in (not one they died in, and never the one they just died in)
 function pickShard(key, avoid) {
-  const banned = bans.get(key) || new Set();
-  let options = shards.filter((s) => !banned.has(s.id) && s.id !== avoid);
-  if (!options.length) { bans.delete(key); options = shards.filter((s) => s.id !== avoid); }
+  const m = bans.get(key) || new Map();
+  const now = Date.now();
+  for (const [id, until] of m) if (until <= now) m.delete(id); // bans run out after 15 minutes
+  let options = shards.filter((s) => !m.has(s.id) && s.id !== avoid);
+  if (!options.length) { bans.delete(key); options = shards.filter((s) => s.id !== avoid); } // banned everywhere: start over
   return options[Math.floor(Math.random() * options.length)];
 }
+let nextCorpseId = 1;
+function createCorpse(socket, sh) {
+  const pl = sh && sh.players[socket.id];
+  if (!pl) return;
+  let seed = 0; for (const ch of String(socket.id)) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0; // same hash the clients use
+  const rg = pl.rg ? pl.rg.slice(0, 6).concat(1) : [pl.x, 0.22, pl.z, -1.5708, pl.r || 0, 0, 1];
+  const c = { id: nextCorpseId++, rg, c: pl.c, seed, guns: socket.guns, until: Date.now() + CORPSE_MS };
+  sh.corpses.push(c);
+  socket.guns = 0;
+  io.to(sh.room).emit('corpse', c);
+}
+// remove bodies that have been lying around for 15 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const sh of shards) {
+    for (let i = sh.corpses.length - 1; i >= 0; i--) {
+      if (sh.corpses[i].until <= now) { io.to(sh.room).emit('corpseGone', sh.corpses[i].id); sh.corpses.splice(i, 1); }
+    }
+  }
+}, 10000);
 function leaveShard(socket) {
   const sh = socket.shard;
   if (!sh) return;
@@ -238,6 +262,7 @@ function joinShard(socket, sh) {
   socket.join(sh.room);
   socket.emit('shardReset'); // the client forgets the previous world
   socket.emit('currentPlayers', sh.players);
+  socket.emit('corpses', sh.corpses);
   socket.emit('core', coreMsg(sh));
 }
 
@@ -261,7 +286,7 @@ io.on('connection', (socket) => {
   const prev = online.get(key);
   if (prev) { prev.emit('kicked'); prev.disconnect(true); }
   online.set(key, socket);
-  socket.hp = 100; socket.dead = false; socket.hasGun = false; socket.diedIn = null; socket.protUntil = 0; socket.lastShot = 0; socket.lastPunch = 0;
+  socket.hp = 100; socket.dead = false; socket.guns = 0; socket.diedIn = null; socket.protUntil = 0; socket.lastShot = 0; socket.lastPunch = 0;
   socket.shard = null;
   joinShard(socket, pickShard(key, -1)); // a random world; the player is never told which
 
@@ -277,7 +302,7 @@ io.on('connection', (socket) => {
       r: num(d.r),
       dd: d.dd ? 1 : 0, // 1 while the player is dead (others hide their body)
       tm: socket.account.team,
-      gn: socket.hasGun ? 1 : 0, // whether they have a pistol
+      gn: socket.guns > 0 ? 1 : 0, // whether they carry a pistol
       sl: Number.isInteger(d.sl) && d.sl >= 0 && d.sl <= 2 ? d.sl : 0, // which hotbar slot they're holding
       // while dead, the dying player streams their ragdoll pose: [x, y, z, rotX, rotY, rotZ, landed]
       rg: d.dd && Array.isArray(d.rg) && d.rg.length === 7
@@ -314,10 +339,11 @@ io.on('connection', (socket) => {
   };
   socket.on('shoot', (d) => {
     const now = Date.now();
-    if (!socket.shard || !d || socket.dead || !socket.hasGun || now - socket.lastShot < GUN.COOLDOWN) return;
+    if (!socket.shard || !d || socket.dead || socket.guns <= 0 || now - socket.lastShot < GUN.COOLDOWN) return;
     socket.lastShot = now;
     const o = vec3(d.o), dir = vec3(d.d);
-    if (o && dir) socket.to(socket.shard.room).volatile.emit('shot', socket.id, o, dir);
+    const end = vec3(d.e); // where the bullet stopped (a wall, a player, or the end of its range)
+    if (o && dir) socket.to(socket.shard.room).volatile.emit('shot', socket.id, o, dir, end);
     const hit = targetOf(d.hit, GUN.RANGE, now);
     if (hit) damage(hit, d.head ? GUN.HEAD : GUN.DMG);
   });
@@ -329,24 +355,44 @@ io.on('connection', (socket) => {
     const hit = targetOf(d.hit, GUN.PUNCH_RANGE, now);
     if (hit) damage(hit, GUN.PUNCH);
   });
-  // Everyone spawns without a pistol; one is handed out in the security room
+  // Everyone spawns without a pistol. The locker in the security room hands out as many as you like, and takes them back.
+  const inSecurity = () => {
+    const sh = socket.shard, p = sh && sh.players[socket.id];
+    return !!p && !socket.dead && !sh.core.ex && p.x >= SEC.x0 && p.x <= SEC.x1 && p.z >= SEC.z0 && p.z <= SEC.z1;
+  };
   socket.on('getGun', () => {
-    const sh = socket.shard;
-    if (!sh || socket.dead || socket.hasGun || sh.core.ex) return;
-    const p = sh.players[socket.id];
-    if (!p || p.x < SEC.x0 || p.x > SEC.x1 || p.z < SEC.z0 || p.z > SEC.z1) return; // must be inside the security room
-    socket.hasGun = true;
-    socket.emit('gun');
+    if (!inSecurity() || socket.guns >= 50) return;
+    socket.guns++;
+    socket.emit('guns', socket.guns);
+  });
+  socket.on('putGun', () => {
+    if (!inSecurity() || socket.guns <= 0) return;
+    socket.guns--;
+    socket.emit('guns', socket.guns);
+  });
+  // Loot: take the pistols from a dead body
+  socket.on('loot', (d) => {
+    const sh = socket.shard, p = sh && sh.players[socket.id];
+    if (!p || socket.dead || !d) return;
+    const c = sh.corpses.find((x) => x.id === d.id);
+    if (!c || c.guns <= 0 || Math.hypot(p.x - c.rg[0], p.z - c.rg[2]) > 4.5) return;
+    socket.guns = Math.min(50, socket.guns + c.guns);
+    c.guns = 0;
+    socket.emit('guns', socket.guns);
+    io.to(sh.room).emit('corpseUpdate', { id: c.id, guns: 0 });
   });
   socket.on('respawned', () => {
-    socket.hasGun = false; // a new life starts without a pistol
+    const wasDead = socket.dead;
+    const old = socket.shard;
+    if (wasDead && old) createCorpse(socket, old); // the body stays where it fell, with whatever it carried
+    socket.guns = 0; // a new life starts without a pistol
     socket.hp = 100; socket.dead = false; socket.protUntil = Date.now() + GUN.SPAWN_PROTECTION;
     if (socket.diedIn !== null && socket.shard) {
-      // you can't go back to the world you died in: ban it and respawn in another one at random
+      // you can't go back to the world you died in: ban it for 15 minutes and respawn in another one at random
       const died = socket.diedIn;
-      const set = bans.get(key) || new Set();
-      set.add(died);
-      bans.set(key, set);
+      const m = bans.get(key) || new Map();
+      m.set(died, Date.now() + BAN_MS);
+      bans.set(key, m);
       socket.diedIn = null;
       const next = pickShard(key, died);
       leaveShard(socket);
@@ -392,6 +438,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    if (socket.dead && socket.shard) createCorpse(socket, socket.shard); // leaving while dead still leaves a body
     leaveShard(socket);
     if (online.get(key) === socket) online.delete(key);
   });
