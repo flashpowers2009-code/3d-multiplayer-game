@@ -55,6 +55,7 @@ canvas{display:block;width:100%;height:100%}
 .slot i{position:absolute;top:2px;left:6px;font-size:11px;font-style:normal;opacity:.8}
 .slot b{font-size:10px;letter-spacing:.04em}
 .slot.on{border-color:#fff;background:rgba(255,255,255,.28)}
+.slot.locked{opacity:.35}
 #idcard{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(150px + env(safe-area-inset-bottom,0px));z-index:7;display:none;width:260px;border-radius:12px;overflow:hidden;background:#f1f5f9;color:#0f172a;box-shadow:0 6px 18px rgba(0,0,0,.5);pointer-events:none}
 #idhead{display:flex;justify-content:space-between;padding:6px 10px;color:#fff;font-size:12px}
 #idbody{display:flex;gap:10px;padding:10px}
@@ -551,6 +552,12 @@ function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.
   for(const z of [15.2,16.8]){const m=new THREE.Mesh(new THREE.PlaneGeometry(1,.6),basicM(0x38bdf8));m.position.set(FX-43.3,1.35,FZ+z);m.rotation.y=Math.PI/2;facGroup.add(m)}
   for(const x of [-47,-45.9,-44.8,-43.7])B(.9,2.1,.6,0x475569,x,1.05,10.6,true); // lockers
   B(2.4,1.9,.5,0x1f2937,-38,.95,21.4,true);B(2.2,1.5,.02,0x1e3a5f,-38,1.0,21.14,false); // gun cabinet
+  // pistol locker: aim at it with your hands and press to take a pistol
+  const gunPanel=new THREE.Mesh(new THREE.BoxGeometry(1.8,.8,.06),basicM(0x4ade80));
+  gunPanel.position.set(FX-38,1.25,FZ+21.08);facGroup.add(gunPanel);
+  gunPanel.userData={type:'gun',i:0,label:'Pistol locker',on:0x4ade80,off:0x4ade80,pressT:0};btnMeshes.push(gunPanel);
+  for(const dx of [-.55,0,.55]){B(.3,.1,.04,0x111827,-38+dx,1.33,21.03,false);B(.09,.2,.04,0x111827,-38+dx-.08,1.18,21.03,false)}
+  sign('TAKE A PISTOL',3.2,-38,2.3,21.0,Math.PI,'#4ade80');
   sign('SECURITY',3.2,-30.32,4.3,16,-Math.PI/2,'#f59e0b');
   strip(-40,16,.5,10,4.95);
 
@@ -605,9 +612,9 @@ function animChar(g,walkT,moving,air){
   u.legL.rotation.x=sw;u.legR.rotation.x=-sw;u.armL.rotation.x=-sw;u.armR.rotation.x=sw;
   if(air){u.armL.rotation.x=u.armR.rotation.x=-2.4;u.legL.rotation.x=.3;u.legR.rotation.x=-.3}
   const sl=u.sl|0;
-  u.gun.visible=sl===0;u.card.visible=sl===2;
+  u.gun.visible=sl===0&&!!u.gn;u.card.visible=sl===2;
   if(performance.now()-(u.punchT||-1e9)<260)u.armR.rotation.x=-1.7; // punching
-  else if(sl===0)u.armR.rotation.x=-1.5; // aiming the pistol straight ahead
+  else if(sl===0&&u.gn)u.armR.rotation.x=-1.5; // aiming the pistol straight ahead
   else if(sl===2)u.armR.rotation.x=-.9; // holding up the ID card
 }
 const SWATCHES=['#3b82f6','#ef4444','#22c55e','#eab308','#a855f7','#f97316','#ec4899','#14b8a6','#f8fafc','#111827'];
@@ -666,7 +673,7 @@ cv.addEventListener('pointerup',e=>{
   }
 });
 cv.addEventListener('pointercancel',endLook);
-cv.addEventListener('wheel',e=>{if(started&&!dead)selectSlot((slot+(e.deltaY>0?1:2))%3);e.preventDefault()},{passive:false});
+cv.addEventListener('wheel',e=>{if(started&&!dead){let n=(slot+(e.deltaY>0?1:2))%3;if(n===0&&!hasGun)n=(n+(e.deltaY>0?1:2))%3;selectSlot(n)};e.preventDefault()},{passive:false});
 
 // Touch controls
 const joy=document.getElementById('joy'),knob=document.getElementById('knob'),jumpB=document.getElementById('jump');
@@ -695,7 +702,7 @@ addEventListener('resize',()=>{
 
 // Multiplayer (Socket.io, served by the same Node server)
 const remotes=new Map();let socket=null,sendAcc=0;const countEl=document.getElementById('count');
-const BUILD=10;
+const BUILD=11;
 function updateCount(){countEl.textContent=(remotes.size+1)+' player'+(remotes.size?'s':'')+' online \u00b7 build '+BUILD}
 updateCount();
 function sendPresence(dt){
@@ -738,7 +745,7 @@ function setRemote(id,d){
   if(!isDead&&r.rag){removeRagdoll(r.rag);r.rag=null;r.g.position.set(d.x,d.y||0,d.z)}
   r.g.visible=!isDead;
   if(typeof d.c==='number'&&r.c!==d.c){r.c=d.c;r.g.userData.sm.color.setHex(d.c)}
-  r.team=d.tm===1?1:0;r.g.userData.sl=d.sl|0;
+  r.team=d.tm===1?1:0;r.g.userData.sl=d.sl|0;r.g.userData.gn=d.gn?1:0;
   updateRemoteCard(r,d);
 }
 function updateRemotes(dt){
@@ -846,6 +853,7 @@ function connect(token){
       document.addEventListener('touchend',()=>{if(!fsEl())goFullscreen()},{once:true});
     }
     connect(token);
+    toast('You have no pistol. Get one from the security room.');
   });
 
   renderMode();
@@ -887,7 +895,7 @@ function respawn(){
   if(localRag){removeRagdoll(localRag);localRag=null}
   deadEl.style.transition='none';deadEl.style.opacity=0;deadEl.style.display='none';deadEl.style.transition='';
   player.position.set((Math.random()-.5)*8,0,(Math.random()-.5)*8);vel.set(0,0,0);
-  hp=100;ammo=GUN_MAG;reloading=false;clearTimeout(reloadT);fireHeld=false;updateHud();
+  hp=100;ammo=GUN_MAG;reloading=false;clearTimeout(reloadT);fireHeld=false;hasGun=false;slot=1;updateSlots();updateButtons();
   if(socket&&socket.connected)socket.emit('respawned');
 }
 
@@ -1083,7 +1091,7 @@ initExplosion();
 
 // ===== Pistols (PvP) =====
 const GUN_MAG=12,GUN_RELOAD_MS=1400,GUN_COOLDOWN=250;
-let hp=100,ammo=GUN_MAG,reloading=false,reloadT=null,lastFire=0,fireHeld=false,gunRec=0,flashT=0,hudShown=false,slot=0,lastPunch=0,punchAnim=0;
+let hp=100,ammo=GUN_MAG,reloading=false,reloadT=null,lastFire=0,fireHeld=false,gunRec=0,flashT=0,hudShown=false,slot=1,hasGun=false,lastPunch=0,punchAnim=0;
 const hudEl=document.getElementById('hud'),hpFill=document.getElementById('hpfill'),hpTxt=document.getElementById('hptxt');
 const ammoEl=document.getElementById('ammo'),hurtEl=document.getElementById('hurt'),xhEl=document.getElementById('xh');
 const fireBtn=document.getElementById('firebtn'),reloadBtn=document.getElementById('reloadbtn');
@@ -1190,6 +1198,7 @@ function bindWeaponEvents(sk){
   sk.on('hitmark',m=>{xhEl.classList.add('hit');setTimeout(()=>xhEl.classList.remove('hit'),m.kill?400:150)});
   sk.on('killed',m=>killPlayer({dx:m.dx,dz:m.dz}));
   sk.on('hp',v=>{hp=v;updateHud()});
+  sk.on('gun',()=>{hasGun=true;ammo=GUN_MAG;reloading=false;clearTimeout(reloadT);updateButtons();selectSlot(0);toast('You picked up a pistol.')});
   sk.on('punched',id=>{const r=remotes.get(id);if(r)r.g.userData.punchT=performance.now()});
 }
 // ---- hotbar: 1 = pistol, 2 = hands, 3 = ID card ----
@@ -1235,12 +1244,16 @@ function updateIdCard(){
   drawPortrait(document.getElementById('idpic'));
 }
 function updateSlots(){
-  document.querySelectorAll('.slot').forEach(el=>el.classList.toggle('on',+el.dataset.s===slot));
+  document.querySelectorAll('.slot').forEach(el=>{el.classList.toggle('on',+el.dataset.s===slot);el.classList.toggle('locked',+el.dataset.s===0&&!hasGun)});
   if(slot===2){updateIdCard();idCardEl.style.display='block'}else idCardEl.style.display='none';
   fireBtn.textContent=slot===0?'FIRE':'PUNCH';
   updateHud();
 }
-function selectSlot(n){if(n===slot)return;slot=n;fireHeld=false;updateSlots()}
+function selectSlot(n){
+  if(n===slot)return;
+  if(n===0&&!hasGun){toast('You have no pistol. Get one from the security room.');return}
+  slot=n;fireHeld=false;updateSlots();
+}
 document.querySelectorAll('.slot').forEach(el=>el.addEventListener('pointerdown',e=>{e.preventDefault();selectSlot(+el.dataset.s)}));
 function punch(){
   const now=performance.now();if(now-lastPunch<450)return;lastPunch=now;punchAnim=1;
@@ -1291,12 +1304,13 @@ function pickButton(nx,ny){
 }
 function pressBtn(m){
   if(coreState.cd>0||coreState.ex||dead)return;
+  if(m.userData.type==='gun'){if(!hasGun&&socket&&socket.connected){m.userData.pressT=performance.now();socket.emit('getGun')}return}
   if(m.userData.type==='cool'&&!coreState.pm[m.userData.i])return; // its pump is off
   m.userData.pressT=performance.now();
   if(socket&&socket.connected)socket.emit('pressButton',{type:m.userData.type,i:m.userData.i});
 }
 function updateButtons(){
-  for(const m of btnMeshes){const u=m.userData;m.material.color.setHex(u.type==='cool'&&!coreState.pm[u.i]?0x6b7280:(btnOn(u)?u.on:u.off))} // grey = pump off, cooler unusable
+  for(const m of btnMeshes){const u=m.userData;m.material.color.setHex(u.type==='gun'?(hasGun?0x6b7280:0x4ade80):u.type==='cool'&&!coreState.pm[u.i]?0x6b7280:(btnOn(u)?u.on:u.off))} // grey = pump off, cooler unusable
 }
 function aimCheck(){
   aimBtn=null;
