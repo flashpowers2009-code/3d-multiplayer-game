@@ -50,7 +50,7 @@ canvas{display:block;width:100%;height:100%}
 .team.on[data-t="0"]{border-color:#60a5fa;background:rgba(59,130,246,.45)}
 .team.on[data-t="1"]{border-color:#f87171;background:rgba(239,68,68,.45)}
 #play:disabled{opacity:.5}
-#hotbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:7;display:none;gap:6px}
+#hotbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:7;display:none;gap:6px;flex-wrap:wrap;justify-content:center;max-width:96vw}
 .slot{width:64px;height:54px;border-radius:8px;border:2px solid rgba(255,255,255,.35);background:rgba(15,23,42,.6);color:#fff;position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:none;user-select:none}
 .slot i{position:absolute;top:2px;left:6px;font-size:11px;font-style:normal;opacity:.8}
 .slot b{font-size:10px;letter-spacing:.04em}
@@ -638,8 +638,8 @@ const keys={};
 addEventListener('keydown',e=>{
   if(!started||dead)return;
   if(e.code==='KeyR'&&!e.repeat){reload();return}
-  if(/^Digit[1-3]$/.test(e.code)){const v=visSlots()[+e.code.slice(5)-1];if(v!==undefined)selectSlot(v);return}
-  if(e.code==='KeyE'&&!e.repeat){if(!paused&&slot===1){if(aimBtn)pressBtn(aimBtn);else{const cid=pickCorpse(0,0);if(cid!==null)loot(cid)}}return}
+  if(/^Digit[1-9]$/.test(e.code)){const it=itemList()[+e.code.slice(5)-1];if(it)selectItem(it[0],it[1]);return}
+  if(e.code==='KeyE'&&!e.repeat){if(!paused&&slot===1){if(aimBtn)pressBtn(aimBtn);else{const it=pickItem(0,0);if(it)loot(it)}}return}
   if(e.code==='KeyC'&&!e.repeat){setPanel(!paused);return}
   if(paused){if(e.code==='Escape')setPanel(false);return}
   keys[e.code]=true;if(e.code==='Space')e.preventDefault();
@@ -678,11 +678,11 @@ const endLook=e=>looks.delete(e.pointerId);
 cv.addEventListener('pointerup',e=>{
   const p=looks.get(e.pointerId);looks.delete(e.pointerId);
   if(p&&started&&!paused&&e.pointerType!=='mouse'&&Math.hypot(e.clientX-p.sx,e.clientY-p.sy)<12&&performance.now()-p.t<400){
-    const b=pickButton(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);if(slot===1){if(b)pressBtn(b);else{const cid=pickCorpse(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);if(cid!==null)loot(cid)}}
+    const b=pickButton(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);if(slot===1){if(b)pressBtn(b);else{const it=pickItem(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);if(it)loot(it)}}
   }
 });
 cv.addEventListener('pointercancel',endLook);
-cv.addEventListener('wheel',e=>{if(started&&!dead){const v=visSlots();let i=v.indexOf(slot);i=(i+(e.deltaY>0?1:v.length-1))%v.length;selectSlot(v[i])}e.preventDefault()},{passive:false});
+cv.addEventListener('wheel',e=>{if(started&&!dead){const L=itemList();let i=L.findIndex(a=>a[0]===slot&&a[1]===selK);i=(i+(e.deltaY>0?1:L.length-1))%L.length;selectItem(L[i][0],L[i][1])}e.preventDefault()},{passive:false});
 
 // Touch controls
 const joy=document.getElementById('joy'),knob=document.getElementById('knob'),jumpB=document.getElementById('jump');
@@ -711,14 +711,14 @@ addEventListener('resize',()=>{
 
 // Multiplayer (Socket.io, served by the same Node server)
 const remotes=new Map();let socket=null,sendAcc=0;const countEl=document.getElementById('count');
-const BUILD=12;
+const BUILD=13;
 function updateCount(){countEl.textContent=(remotes.size+1)+' player'+(remotes.size?'s':'')+' online \u00b7 build '+BUILD}
 updateCount();
 function sendPresence(dt){
   if(!socket||!socket.connected)return;
   sendAcc+=dt;if(sendAcc<0.066)return;sendAcc=0;
   const p=player.position;
-  socket.volatile.emit('playerMovement',{x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),r:+player.rotation.y.toFixed(2),c:myColor,n:myName,dd:dead?1:0,sl:slot,rg:(dead&&localRag)?[+localRag.h.position.x.toFixed(2),+localRag.h.position.y.toFixed(2),+localRag.h.position.z.toFixed(2),+localRag.h.rotation.x.toFixed(3),+localRag.h.rotation.y.toFixed(3),+localRag.h.rotation.z.toFixed(3),localRag.landed?1:0]:undefined});
+  socket.volatile.emit('playerMovement',{x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),r:+player.rotation.y.toFixed(2),c:myColor,n:myName,dd:dead?1:0,sl:slot,ic:slot===2?selK:0,rg:(dead&&localRag)?[+localRag.h.position.x.toFixed(2),+localRag.h.position.y.toFixed(2),+localRag.h.position.z.toFixed(2),+localRag.h.rotation.x.toFixed(3),+localRag.h.rotation.y.toFixed(3),+localRag.h.rotation.z.toFixed(3),localRag.landed?1:0]:undefined});
 }
 function makeTag(name,col){
   const c=document.createElement('canvas');c.width=256;c.height=64;const x=c.getContext('2d');
@@ -904,7 +904,7 @@ function respawn(){
   if(localRag){removeRagdoll(localRag);localRag=null}
   deadEl.style.transition='none';deadEl.style.opacity=0;deadEl.style.display='none';deadEl.style.transition='';
   player.position.set((Math.random()-.5)*8,0,(Math.random()-.5)*8);vel.set(0,0,0);
-  hp=100;ammo=GUN_MAG;reloading=false;clearTimeout(reloadT);fireHeld=false;guns=0;hasGun=false;slot=1;updateSlots();updateButtons();
+  hp=100;reloading=false;clearTimeout(reloadT);fireHeld=false;guns=0;ammoArr=[];cards=[{n:myName,t:myTeam,c:myColor}];hasGun=false;slot=1;selK=0;updateSlots();updateButtons();
   if(socket&&socket.connected)socket.emit('respawned');
 }
 
@@ -1100,7 +1100,7 @@ initExplosion();
 
 // ===== Pistols (PvP) =====
 const GUN_MAG=12,GUN_RELOAD_MS=1400,GUN_COOLDOWN=250;
-let hp=100,ammo=GUN_MAG,reloading=false,reloadT=null,lastFire=0,fireHeld=false,gunRec=0,flashT=0,hudShown=false,slot=1,hasGun=false,guns=0,lastPunch=0,punchAnim=0;
+let hp=100,ammo=GUN_MAG,reloading=false,reloadT=null,lastFire=0,fireHeld=false,gunRec=0,flashT=0,hudShown=false,slot=1,selK=0,hasGun=false,guns=0,ammoArr=[],cards=[],lastPunch=0,punchAnim=0;
 const hudEl=document.getElementById('hud'),hpFill=document.getElementById('hpfill'),hpTxt=document.getElementById('hptxt');
 const ammoEl=document.getElementById('ammo'),hurtEl=document.getElementById('hurt'),xhEl=document.getElementById('xh');
 const fireBtn=document.getElementById('firebtn'),reloadBtn=document.getElementById('reloadbtn');
@@ -1166,18 +1166,19 @@ function playShot(vol){
 function updateHud(){
   hudEl.style.display=(started&&!dead)?'block':'none';
   const v=Math.max(0,hp);hpFill.style.width=v+'%';hpFill.style.background=v>50?'#4ade80':v>25?'#fbbf24':'#ef4444';
-  hpTxt.textContent=v;ammoEl.textContent=reloading?'RELOADING...':ammo+' / '+GUN_MAG;ammoEl.style.display=slot===0?'block':'none';
+  hpTxt.textContent=v;ammoEl.textContent=reloading?'RELOADING...':(ammoArr[selK]|0)+' / '+GUN_MAG;ammoEl.style.display=slot===0?'block':'none';
 }
 function reload(){
-  if(!started||dead||reloading||slot!==0||ammo===GUN_MAG)return;
+  const k=selK;
+  if(!started||dead||reloading||slot!==0||ammoArr[k]===GUN_MAG)return;
   reloading=true;updateHud();
-  reloadT=setTimeout(()=>{ammo=GUN_MAG;reloading=false;updateHud()},GUN_RELOAD_MS);
+  reloadT=setTimeout(()=>{ammoArr[k]=GUN_MAG;reloading=false;updateHud()},GUN_RELOAD_MS);
 }
 function tryFire(){
   if(!started||paused||dead||reloading||slot!==0)return;
   const now=performance.now();if(now-lastFire<GUN_COOLDOWN)return;
-  if(ammo<=0){reload();return}
-  lastFire=now;ammo--;updateHud();
+  if(!(ammoArr[selK]>0)){reload();return}
+  lastFire=now;ammoArr[selK]--;updateHud();
   gunRay.setFromCamera({x:0,y:0},camera);
   const o=gunRay.ray.origin.clone(),dir=gunRay.ray.direction.clone();
   // did we hit another player?
@@ -1211,52 +1212,87 @@ function bindWeaponEvents(sk){
   sk.on('hitmark',m=>{xhEl.classList.add('hit');setTimeout(()=>xhEl.classList.remove('hit'),m.kill?400:150)});
   sk.on('killed',m=>killPlayer({dx:m.dx,dz:m.dz}));
   sk.on('hp',v=>{hp=v;updateHud()});
-  sk.on('guns',n=>{
-    const had=hasGun;guns=n;hasGun=n>0;
-    if(!hasGun&&slot===0)slot=1;
-    if(!had&&hasGun){ammo=GUN_MAG;reloading=false;clearTimeout(reloadT);slot=0}
+  sk.on('inv',m=>{
+    const had=guns;guns=m.guns;hasGun=guns>0;
+    while(ammoArr.length<guns)ammoArr.push(GUN_MAG); // new pistols come with a full magazine
+    ammoArr.length=guns;
+    if(Array.isArray(m.cards)&&m.cards.length)cards=m.cards;
+    if(had===0&&guns>0){slot=0;selK=0} // the first pistol you pick up is equipped
     updateButtons();updateSlots();
   });
   sk.on('corpse',addCorpse);
   sk.on('corpses',list=>{for(const id of [...corpses.keys()])removeCorpse(id);for(const c of list)addCorpse(c)});
   sk.on('corpseGone',removeCorpse);
-  sk.on('corpseUpdate',m=>setCorpseGuns(m.id,m.guns));
+  sk.on('corpseUpdate',m=>setCorpseItems(m.id,m.items));
+  sk.on('corpseBlast',list=>{for(const m of list)blastCorpse(m)});
   sk.on('punched',id=>{const r=remotes.get(id);if(r)r.g.userData.punchT=performance.now()});
 }
-// ---- dead bodies: they stay for 15 minutes and can be looted for their pistols ----
+// ---- dead bodies: they stay for 15 minutes; every item on them can be picked up one at a time ----
 const corpses=new Map();
 const lootRay=new THREE.Raycaster();lootRay.far=3.5;
+function glowRing(col){
+  const ring=new THREE.Mesh(new THREE.RingGeometry(.28,.36,24),new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:.7,side:THREE.DoubleSide,depthWrite:false}));
+  ring.rotation.x=-Math.PI/2;ring.position.y=.02;return ring;
+}
 function makeGroundGun(){
   const g=new THREE.Group(),part=(w,h,d,c,x,y,z)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshLambertMaterial({color:c}));m.position.set(x,y,z);g.add(m)};
-  part(.3,.07,.09,0x4b5563,0,.06,0);part(.07,.14,.08,0x1f2937,-.09,.02,0);
-  const ring=new THREE.Mesh(new THREE.RingGeometry(.28,.36,24),new THREE.MeshBasicMaterial({color:0x4ade80,transparent:true,opacity:.7,side:THREE.DoubleSide,depthWrite:false}));
-  ring.rotation.x=-Math.PI/2;ring.position.y=.02;g.add(ring);
+  part(.3,.07,.09,0x4b5563,0,.06,0);part(.07,.14,.08,0x1f2937,-.09,.02,0);g.add(glowRing(0x4ade80));
   return g;
 }
-function setCorpseGuns(id,n){
-  const e=corpses.get(id);if(!e)return;
-  e.guns=n;while(e.gunsG.children.length)e.gunsG.remove(e.gunsG.children[0]);
-  for(let i=0;i<Math.min(n,3);i++){const gg=makeGroundGun();gg.position.set(0,0,i*.3);e.gunsG.add(gg)}
+function makeGroundCard(card){
+  const g=new THREE.Group(),cv=document.createElement('canvas');cv.width=320;cv.height=200;
+  drawIdCard(cv,String(card.n||'Player').slice(0,16),card.t===1?1:0,typeof card.c==='number'?card.c:0x3b82f6);
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(.42,.26),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(cv)}));
+  m.rotation.x=-Math.PI/2;m.position.y=.03;g.add(m);g.add(glowRing(0x93c5fd));
+  return g;
 }
-function removeCorpse(id){const e=corpses.get(id);if(!e)return;removeRagdoll(e.R);scene.remove(e.gunsG);corpses.delete(id)}
+function setCorpseItems(id,items){
+  const e=corpses.get(id);if(!e)return;
+  e.items=items;while(e.itemsG.children.length)e.itemsG.remove(e.itemsG.children[0]);
+  items.slice(0,24).forEach((it,i)=>{
+    const g=it.kind==='card'?makeGroundCard(it.card):makeGroundGun();
+    g.position.set((i%4)*.5,0,Math.floor(i/4)*.45);g.userData.iid=it.id;
+    const hb=new THREE.Mesh(new THREE.BoxGeometry(.5,.35,.45),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));
+    hb.position.y=.15;g.add(hb); // invisible, makes each item easy to aim at
+    e.itemsG.add(g);
+  });
+}
+function removeCorpse(id){const e=corpses.get(id);if(!e)return;removeRagdoll(e.R);scene.remove(e.itemsG);corpses.delete(id)}
 function addCorpse(c){
   removeCorpse(c.id);
   const rg=c.rg,R=spawnRagdoll(c.c,rg[0],rg[1]-1.1,rg[2],rg[4],c.seed,true);
   R.h.position.set(rg[0],rg[1],rg[2]);R.h.rotation.set(rg[3],rg[4],rg[5]);R.landed=true;landPose(R);
-  R.g.userData.gun.visible=false;R.g.userData.card.visible=false;R.h.userData.cid=c.id;
-  const gunsG=new THREE.Group();gunsG.userData.cid=c.id;gunsG.position.set(rg[0]+.9,0,rg[2]+.2);scene.add(gunsG);
-  corpses.set(c.id,{R,gunsG,guns:0});setCorpseGuns(c.id,c.guns);
+  R.g.userData.gun.visible=false;R.g.userData.card.visible=false;
+  const itemsG=new THREE.Group();itemsG.userData.cid=c.id;itemsG.position.set(rg[0]+.9,0,rg[2]+.2);scene.add(itemsG);
+  corpses.set(c.id,{R,itemsG,items:[],fly:null});setCorpseItems(c.id,c.items||[]);
 }
-function pickCorpse(nx,ny){ // the body (or its pistols) you are looking at, within reach
+function pickItem(nx,ny){ // the single item (pistol or ID card) you are looking at, within reach
   if(!corpses.size)return null;
   lootRay.setFromCamera({x:nx,y:ny},camera);
-  const objs=[];for(const e of corpses.values()){objs.push(e.R.h);if(e.guns>0)objs.push(e.gunsG)}
+  const objs=[];for(const e of corpses.values())if(!e.fly)objs.push(e.itemsG);
   const hits=lootRay.intersectObjects(objs,true);if(!hits.length)return null;
-  let ob=hits[0].object;while(ob&&ob.userData.cid===undefined)ob=ob.parent;
+  let ob=hits[0].object;while(ob&&ob.userData.iid===undefined)ob=ob.parent;
   if(!ob||hits[0].distance>blockDist(lootRay.ray.origin,lootRay.ray.direction,3.5))return null;
-  return ob.userData.cid;
+  let root=ob;while(root&&root.userData.cid===undefined)root=root.parent;
+  return root?{cid:root.userData.cid,iid:ob.userData.iid}:null;
 }
-function loot(cid){const e=corpses.get(cid);if(e&&e.guns>0&&socket&&socket.connected)socket.emit('loot',{id:cid})}
+function loot(it){if(corpses.has(it.cid)&&socket&&socket.connected)socket.emit('loot',{id:it.cid,item:it.iid})}
+function blastCorpse(m){ // the core explosion throws the body (and its items) across the map
+  const e=corpses.get(m.id);if(!e)return;
+  e.fly={t:0,dur:1.8,from:m.from,to:m.rg};e.itemsG.visible=false;
+}
+function corpseTick(dt){
+  for(const e of corpses.values()){
+    const f=e.fly;if(!f)continue;
+    f.t+=dt;const k=Math.min(1,f.t/f.dur),R=e.R,arc=Math.sin(k*Math.PI);
+    R.h.position.set(f.from[0]+(f.to[0]-f.from[0])*k,f.from[1]+(f.to[1]-f.from[1])*k+arc*7,f.from[2]+(f.to[2]-f.from[2])*k);
+    R.h.rotation.set(f.from[3]+(f.to[3]-f.from[3])*k+arc*5,f.from[4]+(f.to[4]-f.from[4])*k,f.from[5]+(f.to[5]-f.from[5])*k+arc*6);
+    if(k>=1){
+      e.fly=null;R.h.position.set(f.to[0],f.to[1],f.to[2]);R.h.rotation.set(f.to[3],f.to[4],f.to[5]);
+      e.itemsG.position.set(f.to[0]+.9,0,f.to[2]+.2);e.itemsG.visible=true;
+    }
+  }
+}
 
 // ---- hotbar: 1 = pistol, 2 = hands, 3 = ID card ----
 const hotbarEl=document.getElementById('hotbar'),idCardEl=document.getElementById('idcard');
@@ -1265,60 +1301,67 @@ for(const x of [.28,-.28]){const m=new THREE.Mesh(new THREE.BoxGeometry(.1,.1,.1
 camera.add(fist);fist.visible=false;
 const meleeRay=new THREE.Raycaster();meleeRay.far=2.6;
 const hexStr=n=>'#'+n.toString(16).padStart(6,'0');
-function drawPortrait(cv){ // a little picture of your character
+function drawPortrait(cv,cd){ // a little picture of the card owner's character
   const x=cv.getContext('2d'),w=cv.width,h=cv.height;
-  x.fillStyle=myTeam===1?'#7f1d1d':'#1e3a8a';x.fillRect(0,0,w,h);
-  x.fillStyle=hexStr(myColor);x.fillRect(w*.1,h*.68,w*.8,h*.32);
+  x.fillStyle='#1e3a8a';x.fillRect(0,0,w,h);
+  x.fillStyle=hexStr(cd.c);x.fillRect(w*.1,h*.68,w*.8,h*.32);
   x.fillStyle='#f2c9a0';x.fillRect(w*.3,h*.18,w*.4,h*.5);
   x.fillStyle='#222';x.fillRect(w*.38,h*.36,w*.07,h*.07);x.fillRect(w*.55,h*.36,w*.07,h*.07);x.fillRect(w*.42,h*.54,w*.16,h*.03);
 }
-function drawIdCard(cv,name,team,col){
+function drawIdCard(cv,name,team,col){ // every ID card is blue, rebel or not; the text says the team
   const x=cv.getContext('2d'),w=cv.width,h=cv.height,reb=team===1;
   x.fillStyle='#f1f5f9';x.fillRect(0,0,w,h);
-  x.fillStyle=reb?'#991b1b':'#1e40af';x.fillRect(0,0,w,42);
+  x.fillStyle='#1e40af';x.fillRect(0,0,w,42);
   x.fillStyle='#fff';x.textBaseline='middle';x.textAlign='left';x.font='bold 24px system-ui,sans-serif';x.fillText(reb?'REBEL':'FACILITY WORKER',12,22);
   x.textAlign='right';x.font='18px system-ui,sans-serif';x.fillText('ID CARD',w-12,22);
-  x.fillStyle=reb?'#7f1d1d':'#1e3a8a';x.fillRect(14,58,124,124);
+  x.fillStyle='#1e3a8a';x.fillRect(14,58,124,124);
   x.fillStyle=hexStr(col);x.fillRect(24,136,104,46);
   x.fillStyle='#f2c9a0';x.fillRect(46,72,60,66);
   x.fillStyle='#222';x.fillRect(58,96,9,9);x.fillRect(84,96,9,9);x.fillRect(64,118,24,4);
   x.textAlign='left';x.fillStyle='#0f172a';x.font='bold 32px system-ui,sans-serif';x.fillText(name,150,96,160);
   x.fillStyle='#475569';x.font='20px system-ui,sans-serif';x.fillText(reb?'Team: Rebels':'Team: Facility',150,134,160);
 }
-function updateRemoteCard(r,d){
-  const name=typeof d.n==='string'&&d.n?d.n.slice(0,16):'Player',team=d.tm===1?1:0,col=typeof d.c==='number'?d.c:0x3b82f6;
+function updateRemoteCard(r,d){ // the card another player is holding up (it may be someone else's, if they stole it)
+  const cd=d.idc||{n:d.n,t:d.tm,c:d.c};
+  const name=typeof cd.n==='string'&&cd.n?cd.n.slice(0,16):'Player',team=cd.t===1?1:0,col=typeof cd.c==='number'?cd.c:0x3b82f6;
   const key=name+'|'+team+'|'+col;if(r.cardKey===key)return;r.cardKey=key;
   const u=r.g.userData;
   if(!u.cardCv){u.cardCv=document.createElement('canvas');u.cardCv.width=320;u.cardCv.height=200;u.cardTex=new THREE.CanvasTexture(u.cardCv);u.cardMat.map=u.cardTex;u.cardMat.color.set(0xffffff);u.cardMat.needsUpdate=true}
   drawIdCard(u.cardCv,name,team,col);u.cardTex.needsUpdate=true;
 }
 function updateIdCard(){
-  const reb=myTeam===1;
-  document.getElementById('idhead').style.background=reb?'#991b1b':'#1e40af';
+  const cd=cards[selK]||{n:myName,t:myTeam,c:myColor},reb=cd.t===1;
+  document.getElementById('idhead').style.background='#1e40af';
   document.getElementById('idteam').textContent=reb?'REBEL':'FACILITY WORKER';
-  document.getElementById('idname').textContent=myName;
+  document.getElementById('idname').textContent=cd.n;
   document.getElementById('idrole').textContent=reb?'Team: Rebels':'Team: Compute Core Facility';
-  drawPortrait(document.getElementById('idpic'));
+  drawPortrait(document.getElementById('idpic'),{c:cd.n===myName?myColor:cd.c});
 }
-function visSlots(){return hasGun?[0,1,2]:[1,2]}
+function itemList(){ // pistols (one slot each), hands, then every ID card you hold
+  if(!cards.length)cards=[{n:myName,t:myTeam,c:myColor}];
+  const a=[];for(let i=0;i<guns;i++)a.push([0,i]);a.push([1,0]);for(let j=0;j<cards.length;j++)a.push([2,j]);return a;
+}
+function selectItem(t,k){
+  if((t===0&&k>=guns)||(t===2&&k>=cards.length)||(t===slot&&k===selK))return;
+  slot=t;selK=k;fireHeld=false;updateSlots();
+}
 function updateSlots(){
-  const vis=visSlots();
-  document.querySelectorAll('.slot').forEach(el=>{ // the pistol slot only shows while you carry one
-    const n=+el.dataset.s,k=vis.indexOf(n);
-    el.style.display=k<0?'none':'flex';el.classList.toggle('on',n===slot);
-    el.querySelector('i').textContent=k+1;
-    if(n===0)el.querySelector('b').textContent=guns>1?'PISTOL x'+guns:'PISTOL';
+  const list=itemList();
+  if(slot===0&&selK>=guns){slot=1;selK=0}
+  if(slot===2&&selK>=cards.length)selK=0;
+  hotbarEl.textContent='';
+  list.forEach(([t,k],i)=>{
+    const el=document.createElement('div');el.className='slot'+(t===slot&&k===selK?' on':'');
+    const num=document.createElement('i');num.textContent=i+1;
+    const lab=document.createElement('b');lab.textContent=t===0?'PISTOL':t===1?'HANDS':(k===0?'ID CARD':'ID: '+String(cards[k].n).slice(0,8));
+    el.append(num,lab);
+    el.addEventListener('pointerdown',e=>{e.preventDefault();selectItem(t,k)});
+    hotbarEl.appendChild(el);
   });
   if(slot===2){updateIdCard();idCardEl.style.display='block'}else idCardEl.style.display='none';
   fireBtn.textContent=slot===0?'FIRE':'PUNCH';
   updateHud();
 }
-function selectSlot(n){
-  if(n===slot)return;
-  if(n===0&&!hasGun)return;
-  slot=n;fireHeld=false;updateSlots();
-}
-document.querySelectorAll('.slot').forEach(el=>el.addEventListener('pointerdown',e=>{e.preventDefault();selectSlot(+el.dataset.s)}));
 function punch(){
   const now=performance.now();if(now-lastPunch<450)return;lastPunch=now;punchAnim=1;
   meleeRay.setFromCamera({x:0,y:0},camera);
@@ -1335,9 +1378,10 @@ function punch(){
 function primary(){ // what a click does depends on what you're holding
   if(!started||paused||dead)return;
   if(slot===0){fireHeld=true;tryFire()}                       // pistol: only shoots, never presses buttons
-  else if(slot===1){if(aimBtn)pressBtn(aimBtn);else{const cid=pickCorpse(0,0);if(cid!==null)loot(cid);else punch()}}   // hands: press the button you aim at, otherwise punch
+  else if(slot===1){if(aimBtn)pressBtn(aimBtn);else{const it=pickItem(0,0);if(it)loot(it);else punch()}}   // hands: press the button you aim at, otherwise punch
 }
 function weaponTick(dt){
+  corpseTick(dt);
   const show=started&&!dead&&!paused;
   gun.visible=show&&slot===0;fist.visible=show&&slot===1;
   if(gunRec>0)gunRec=Math.max(0,gunRec-dt*7);
