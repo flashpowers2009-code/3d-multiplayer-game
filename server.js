@@ -170,6 +170,7 @@ const HEATER_POWER = 2;     // degrees C per second added by each heater
 const COOLER_POWER = 2;     // degrees C per second removed by each cooler
 const GUN = { DMG: 20, HEAD: 40, RANGE: 150, COOLDOWN: 180, SPAWN_PROTECTION: 3000, PUNCH: 10, PUNCH_COOLDOWN: 400, PUNCH_RANGE: 4 };
 // the security room (where pistols are handed out): world coordinates, a little generous
+const MAX_SLOTS = 10;
 const SEC = { x0: -51, x1: -29, z0: -36, z1: -22 };
 const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
 
@@ -380,12 +381,15 @@ io.on('connection', (socket) => {
     if (hit) damage(hit, GUN.PUNCH);
   });
   // Everyone spawns without a pistol. The locker in the security room hands out as many as you like, and takes them back.
+  // hotbar cap: pistols + hands + ID cards can never take more than 10 slots
+  const slotsUsed = () => socket.guns + 1 + socket.cards.length;
   const inSecurity = () => {
     const sh = socket.shard, p = sh && sh.players[socket.id];
     return !!p && !socket.dead && !sh.core.ex && p.x >= SEC.x0 && p.x <= SEC.x1 && p.z >= SEC.z0 && p.z <= SEC.z1;
   };
   socket.on('getGun', () => {
-    if (!inSecurity() || socket.guns >= 50) return;
+    if (!inSecurity()) return;
+    if (slotsUsed() >= MAX_SLOTS) { socket.emit('full'); return; } // hotbar is full
     socket.guns++;
     sendInv();
   });
@@ -401,7 +405,8 @@ io.on('connection', (socket) => {
     const c = sh.corpses.find((x) => x.id === d.id);
     if (!c || Math.hypot(p.x - c.rg[0], p.z - c.rg[2]) > 4.5) return;
     const i = c.items.findIndex((it) => it.id === d.item);
-    if (i < 0 || (c.items[i].kind === 'pistol' && socket.guns >= 50)) return;
+    if (i < 0) return;
+    if (slotsUsed() >= MAX_SLOTS) { socket.emit('full'); return; } // hotbar is full
     const it = c.items.splice(i, 1)[0];
     if (it.kind === 'pistol') socket.guns++; else socket.cards.push(it.card);
     sendInv();
