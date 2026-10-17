@@ -638,7 +638,7 @@ const keys={};
 addEventListener('keydown',e=>{
   if(!started||dead)return;
   if(e.code==='KeyR'&&!e.repeat){reload();return}
-  if(/^Digit[1-9]$/.test(e.code)){const it=itemList()[+e.code.slice(5)-1];if(it)selectItem(it[0],it[1]);return}
+  if(/^Digit[0-9]$/.test(e.code)){const dn=+e.code.slice(5),it=itemList()[dn===0?9:dn-1];if(it)selectItem(it[0],it[1]);return}
   if(e.code==='KeyE'&&!e.repeat){if(!paused&&slot===1){if(aimBtn)pressBtn(aimBtn);else{const it=pickItem(0,0);if(it)loot(it)}}return}
   if(e.code==='KeyC'&&!e.repeat){setPanel(!paused);return}
   if(paused){if(e.code==='Escape')setPanel(false);return}
@@ -711,7 +711,7 @@ addEventListener('resize',()=>{
 
 // Multiplayer (Socket.io, served by the same Node server)
 const remotes=new Map();let socket=null,sendAcc=0;const countEl=document.getElementById('count');
-const BUILD=13;
+const BUILD=14;
 function updateCount(){countEl.textContent=(remotes.size+1)+' player'+(remotes.size?'s':'')+' online \u00b7 build '+BUILD}
 updateCount();
 function sendPresence(dt){
@@ -1212,6 +1212,7 @@ function bindWeaponEvents(sk){
   sk.on('hitmark',m=>{xhEl.classList.add('hit');setTimeout(()=>xhEl.classList.remove('hit'),m.kill?400:150)});
   sk.on('killed',m=>killPlayer({dx:m.dx,dz:m.dz}));
   sk.on('hp',v=>{hp=v;updateHud()});
+  sk.on('full',()=>toast('Your hotbar is full (10 slots max).'));
   sk.on('inv',m=>{
     const had=guns;guns=m.guns;hasGun=guns>0;
     while(ammoArr.length<guns)ammoArr.push(GUN_MAG); // new pistols come with a full magazine
@@ -1352,7 +1353,7 @@ function updateSlots(){
   hotbarEl.textContent='';
   list.forEach(([t,k],i)=>{
     const el=document.createElement('div');el.className='slot'+(t===slot&&k===selK?' on':'');
-    const num=document.createElement('i');num.textContent=i+1;
+    const num=document.createElement('i');num.textContent=(i+1)%10;
     const lab=document.createElement('b');lab.textContent=t===0?'PISTOL':t===1?'HANDS':(k===0?'ID CARD':'ID: '+String(cards[k].n).slice(0,8));
     el.append(num,lab);
     el.addEventListener('pointerdown',e=>{e.preventDefault();selectItem(t,k)});
