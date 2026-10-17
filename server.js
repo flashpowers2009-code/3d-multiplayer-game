@@ -209,6 +209,7 @@ function simulate(sh) {
     sh.evacTimer = setTimeout(() => {
       core.melt = false;
       core.ex = true;
+      blastCorpses(sh);
       emitCore(sh);
       sh.exTimer = setTimeout(() => { resetCore(sh); emitCore(sh); }, REBUILD_MS);
     }, EVAC_MS);
@@ -226,16 +227,36 @@ function pickShard(key, avoid) {
   if (!options.length) { bans.delete(key); options = shards.filter((s) => s.id !== avoid); } // banned everywhere: start over
   return options[Math.floor(Math.random() * options.length)];
 }
-let nextCorpseId = 1;
+let nextCorpseId = 1, nextItemId = 1;
 function createCorpse(socket, sh) {
   const pl = sh && sh.players[socket.id];
   if (!pl) return;
   let seed = 0; for (const ch of String(socket.id)) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0; // same hash the clients use
   const rg = pl.rg ? pl.rg.slice(0, 6).concat(1) : [pl.x, 0.22, pl.z, -1.5708, pl.r || 0, 0, 1];
-  const c = { id: nextCorpseId++, rg, c: pl.c, seed, guns: socket.guns, until: Date.now() + CORPSE_MS };
+  // everything they carried drops with them, as separate items: each pistol, and their ID card(s)
+  const items = [];
+  for (let i = 0; i < socket.guns; i++) items.push({ id: nextItemId++, kind: 'pistol' });
+  for (const card of socket.cards) items.push({ id: nextItemId++, kind: 'card', card: { ...card } });
+  const c = { id: nextCorpseId++, rg, c: pl.c, seed, items, until: Date.now() + CORPSE_MS };
   sh.corpses.push(c);
-  socket.guns = 0;
+  socket.guns = 0; socket.cards = [];
   io.to(sh.room).emit('corpse', c);
+}
+// the core explosion throws nearby bodies far across the map
+function blastCorpses(sh) {
+  const CX = 0, CZ = -45, clamp = (v) => Math.max(-95, Math.min(95, v));
+  const moved = [];
+  for (const c of sh.corpses) {
+    const dx = c.rg[0] - CX, dz = c.rg[2] - CZ, d = Math.hypot(dx, dz);
+    if (d > 60) continue;
+    const ang = d > 0.5 ? Math.atan2(dz, dx) : (c.seed % 628) / 100;
+    const dist = 22 + (c.seed % 17);
+    const from = c.rg.slice();
+    c.rg = [clamp(c.rg[0] + Math.cos(ang) * dist), 0.22, clamp(c.rg[2] + Math.sin(ang) * dist),
+      ((c.seed >> 3) % 2 ? 1 : -1) * Math.PI / 2, (c.seed % 628) / 100, ((c.seed % 13) - 6) / 20, 1];
+    moved.push({ id: c.id, from, rg: c.rg });
+  }
+  if (moved.length) io.to(sh.room).emit('corpseBlast', moved);
 }
 // remove bodies that have been lying around for 15 minutes
 setInterval(() => {
@@ -286,9 +307,11 @@ io.on('connection', (socket) => {
   const prev = online.get(key);
   if (prev) { prev.emit('kicked'); prev.disconnect(true); }
   online.set(key, socket);
-  socket.hp = 100; socket.dead = false; socket.guns = 0; socket.diedIn = null; socket.protUntil = 0; socket.lastShot = 0; socket.lastPunch = 0;
+  socket.hp = 100; socket.dead = false; socket.guns = 0; socket.cards = [{ n: username, t: socket.account.team, c: color }]; socket.diedIn = null; socket.protUntil = 0; socket.lastShot = 0; socket.lastPunch = 0;
   socket.shard = null;
+  const sendInv = () => socket.emit('inv', { guns: socket.guns, cards: socket.cards });
   joinShard(socket, pickShard(key, -1)); // a random world; the player is never told which
+  sendInv();
 
   socket.on('playerMovement', (d) => {
     const sh = socket.shard;
@@ -303,6 +326,7 @@ io.on('connection', (socket) => {
       dd: d.dd ? 1 : 0, // 1 while the player is dead (others hide their body)
       tm: socket.account.team,
       gn: socket.guns > 0 ? 1 : 0, // whether they carry a pistol
+      idc: socket.cards[Number.isInteger(d.ic) && d.ic >= 0 && d.ic < socket.cards.length ? d.ic : 0], // the ID card they are holding up
       sl: Number.isInteger(d.sl) && d.sl >= 0 && d.sl <= 2 ? d.sl : 0, // which hotbar slot they're holding
       // while dead, the dying player streams their ragdoll pose: [x, y, z, rotX, rotY, rotZ, landed]
       rg: d.dd && Array.isArray(d.rg) && d.rg.length === 7
@@ -363,29 +387,32 @@ io.on('connection', (socket) => {
   socket.on('getGun', () => {
     if (!inSecurity() || socket.guns >= 50) return;
     socket.guns++;
-    socket.emit('guns', socket.guns);
+    sendInv();
   });
   socket.on('putGun', () => {
     if (!inSecurity() || socket.guns <= 0) return;
     socket.guns--;
-    socket.emit('guns', socket.guns);
+    sendInv();
   });
-  // Loot: take the pistols from a dead body
+  // Loot: pick up ONE item (a pistol or an ID card) from a dead body
   socket.on('loot', (d) => {
     const sh = socket.shard, p = sh && sh.players[socket.id];
     if (!p || socket.dead || !d) return;
     const c = sh.corpses.find((x) => x.id === d.id);
-    if (!c || c.guns <= 0 || Math.hypot(p.x - c.rg[0], p.z - c.rg[2]) > 4.5) return;
-    socket.guns = Math.min(50, socket.guns + c.guns);
-    c.guns = 0;
-    socket.emit('guns', socket.guns);
-    io.to(sh.room).emit('corpseUpdate', { id: c.id, guns: 0 });
+    if (!c || Math.hypot(p.x - c.rg[0], p.z - c.rg[2]) > 4.5) return;
+    const i = c.items.findIndex((it) => it.id === d.item);
+    if (i < 0 || (c.items[i].kind === 'pistol' && socket.guns >= 50)) return;
+    const it = c.items.splice(i, 1)[0];
+    if (it.kind === 'pistol') socket.guns++; else socket.cards.push(it.card);
+    sendInv();
+    io.to(sh.room).emit('corpseUpdate', { id: c.id, items: c.items });
   });
   socket.on('respawned', () => {
     const wasDead = socket.dead;
     const old = socket.shard;
     if (wasDead && old) createCorpse(socket, old); // the body stays where it fell, with whatever it carried
-    socket.guns = 0; // a new life starts without a pistol
+    socket.guns = 0; // a new life starts without a pistol, with a fresh ID card
+    socket.cards = [{ n: username, t: socket.account.team, c: color }];
     socket.hp = 100; socket.dead = false; socket.protUntil = Date.now() + GUN.SPAWN_PROTECTION;
     if (socket.diedIn !== null && socket.shard) {
       // you can't go back to the world you died in: ban it for 15 minutes and respawn in another one at random
@@ -398,6 +425,7 @@ io.on('connection', (socket) => {
       leaveShard(socket);
       joinShard(socket, next);
     }
+    sendInv();
     socket.emit('hp', 100);
   });
 
@@ -429,6 +457,7 @@ io.on('connection', (socket) => {
     if (!colorOk(c) || now - lastColorChange < 200) return;
     lastColorChange = now;
     color = c;
+    for (const cd of socket.cards) if (cd.n === username) cd.c = c; // your own ID card follows your shirt color
     const sh = socket.shard;
     if (sh && sh.players[socket.id]) {
       sh.players[socket.id].c = c;
