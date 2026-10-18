@@ -35,6 +35,7 @@ canvas{display:block;width:100%;height:100%}
 #dead{position:fixed;inset:0;z-index:26;display:none;flex-direction:column;align-items:center;justify-content:center;background:#000;opacity:0;transition:opacity 1.6s ease-in;color:#fff;text-align:center;padding:20px;pointer-events:none}
 #dead b{font-size:44px;letter-spacing:.06em}
 #dead span{font-size:16px;margin-top:10px;opacity:.85}
+#respawnbtn{pointer-events:auto;margin-top:18px;padding:12px 30px;border:none;border-radius:10px;background:#22c55e;color:#fff;font-size:18px;font-weight:700;cursor:pointer}
 #hud{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:6;display:none;width:150px;color:#fff;text-align:center;font-size:13px;text-shadow:0 1px 3px #000;pointer-events:none}
 #hpbar{height:10px;border-radius:5px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.5);overflow:hidden}
 #hpfill{height:100%;width:100%;background:#4ade80}
@@ -101,7 +102,7 @@ canvas{display:block;width:100%;height:100%}
 <div id="hotbar"><div class="slot" data-s="0"><i>1</i><b>PISTOL</b></div><div class="slot" data-s="1"><i>2</i><b>HANDS</b></div><div class="slot" data-s="2"><i>3</i><b>ID CARD</b></div></div>
 <div id="idcard"><div id="idhead"><b id="idteam">REBEL</b><span>ID CARD</span></div><div id="idbody"><canvas id="idpic" width="128" height="128"></canvas><div><div id="idname">Name</div><div id="idrole">Role</div></div></div></div>
 <button id="firebtn">FIRE</button><button id="reloadbtn">&#8635;</button>
-<div id="dead"><b>YOU DIED</b><span>Respawning in <i id="deadsec">6</i>...</span></div>
+<div id="dead"><b>YOU DIED</b><span id="deadwait">You can respawn in <i id="deadsec">6</i>...</span><span id="deadready" style="display:none">You can respawn now.</span><button id="respawnbtn" style="display:none">Respawn</button></div>
 <div id="xh"></div>
 <div id="joy"><div id="knob"></div></div>
 <div id="jump">Jump</div>
@@ -711,7 +712,7 @@ addEventListener('resize',()=>{
 
 // Multiplayer (Socket.io, served by the same Node server)
 const remotes=new Map();let socket=null,sendAcc=0;const countEl=document.getElementById('count');
-const BUILD=14;
+const BUILD=15;
 function updateCount(){countEl.textContent=(remotes.size+1)+' player'+(remotes.size?'s':'')+' online \u00b7 build '+BUILD}
 updateCount();
 function sendPresence(dt){
@@ -886,7 +887,7 @@ function radialTex(inner,outer){
 }
 const smokeTex=radialTex('rgba(55,55,55,.95)','rgba(55,55,55,0)'),fireTex=radialTex('rgba(255,210,90,1)','rgba(255,70,0,0)');
 let dead=false,deadUntil=0,deadStart=0,deadTimer=null,localRag=null;
-const deadEl=document.getElementById('dead'),deadSec=document.getElementById('deadsec');
+const deadEl=document.getElementById('dead'),deadSec=document.getElementById('deadsec'),deadWait=document.getElementById('deadwait'),deadReady=document.getElementById('deadready'),respawnBtn=document.getElementById('respawnbtn');
 function hashStr(str){let hs=0;for(const ch of String(str))hs=(hs*31+ch.charCodeAt(0))>>>0;return hs}
 function killPlayer(imp){
   if(dead)return;
@@ -894,13 +895,18 @@ function killPlayer(imp){
   dead=true;deadStart=performance.now();deadUntil=deadStart+6000;
   for(const k in keys)keys[k]=false;
   joyV.x=joyV.y=0;jumpQueued=false;
+  if(document.exitPointerLock)document.exitPointerLock(); // free the mouse for the respawn button
+  const away=document.hidden; // killed while the browser was in the background (away from the keyboard)
   // our own body ragdolls and the camera rides along with it
-  localRag=spawnRagdoll(myColor,player.position.x,player.position.y,player.position.z,player.rotation.y,hashStr((socket&&socket.id)||'me'),false,imp);
-  deadEl.style.display='flex';deadEl.style.opacity=0;
-  clearTimeout(deadTimer);deadTimer=setTimeout(()=>{if(dead)deadEl.style.opacity=1},1300); // fade to black after the tumble
+  if(!away)localRag=spawnRagdoll(myColor,player.position.x,player.position.y,player.position.z,player.rotation.y,hashStr((socket&&socket.id)||'me'),false,imp);
+  respawnBtn.style.display='none';deadReady.style.display='none';deadWait.style.display='block';
+  deadEl.style.display='flex';
+  if(away){deadEl.style.transition='none';deadEl.style.opacity=1;requestAnimationFrame(()=>{deadEl.style.transition=''})}
+  else{deadEl.style.opacity=0;clearTimeout(deadTimer);deadTimer=setTimeout(()=>{if(dead)deadEl.style.opacity=1},1300)} // fade to black after the tumble
 }
+respawnBtn.addEventListener('click',()=>{if(dead&&performance.now()>=deadUntil)respawn()});
 function respawn(){
-  dead=false;clearTimeout(deadTimer);
+  dead=false;clearTimeout(deadTimer);respawnBtn.style.display='none';deadReady.style.display='none';deadWait.style.display='block';
   if(localRag){removeRagdoll(localRag);localRag=null}
   deadEl.style.transition='none';deadEl.style.opacity=0;deadEl.style.display='none';deadEl.style.transition='';
   player.position.set((Math.random()-.5)*8,0,(Math.random()-.5)*8);vel.set(0,0,0);
@@ -1033,11 +1039,14 @@ function explodeFacility(){
     sp.userData={s0:3+Math.random()*3,ph:Math.random()*6};scene.add(sp);exFx.flames.push(sp);
   }
   exFx.light.intensity=14;flashEl.style.opacity=1;
-  if(insideFacility())killPlayer();
   toast('C0D3_8L4CK \u2014 the core exploded and the facility was destroyed!');
 }
 function explosionTick(dt){
-  if(dead){if(performance.now()>deadUntil)respawn();else deadSec.textContent=Math.max(1,Math.ceil((deadUntil-performance.now())/1000))}
+  if(dead){ // after 6 seconds the player has to press the Respawn button themselves
+    const left=deadUntil-performance.now();
+    if(left>0)deadSec.textContent=Math.max(1,Math.ceil(left/1000));
+    else if(respawnBtn.style.display==='none'){deadWait.style.display='none';deadReady.style.display='block';respawnBtn.style.display='block'}
+  }
   ragdollTick(dt);
   if(!exFx.active)return;
   const tt=performance.now()/1000-exFx.t0;
@@ -1210,7 +1219,7 @@ function bindWeaponEvents(sk){
   });
   sk.on('hurt',m=>{hp=m.hp;updateHud();hurtFlash()});
   sk.on('hitmark',m=>{xhEl.classList.add('hit');setTimeout(()=>xhEl.classList.remove('hit'),m.kill?400:150)});
-  sk.on('killed',m=>killPlayer({dx:m.dx,dz:m.dz}));
+  sk.on('killed',m=>killPlayer(m.blast?undefined:{dx:m.dx,dz:m.dz}));
   sk.on('hp',v=>{hp=v;updateHud()});
   sk.on('full',()=>toast('Your hotbar is full (10 slots max).'));
   sk.on('inv',m=>{
@@ -1261,11 +1270,14 @@ function setCorpseItems(id,items){
 function removeCorpse(id){const e=corpses.get(id);if(!e)return;removeRagdoll(e.R);scene.remove(e.itemsG);corpses.delete(id)}
 function addCorpse(c){
   removeCorpse(c.id);
+  if(socket&&c.owner===socket.id)return; // your own body: you already see it as your ragdoll
   const rg=c.rg,R=spawnRagdoll(c.c,rg[0],rg[1]-1.1,rg[2],rg[4],c.seed,true);
   R.h.position.set(rg[0],rg[1],rg[2]);R.h.rotation.set(rg[3],rg[4],rg[5]);R.landed=true;landPose(R);
   R.g.userData.gun.visible=false;R.g.userData.card.visible=false;
   const itemsG=new THREE.Group();itemsG.userData.cid=c.id;itemsG.position.set(rg[0]+.9,0,rg[2]+.2);scene.add(itemsG);
-  corpses.set(c.id,{R,itemsG,items:[],fly:null});setCorpseItems(c.id,c.items||[]);
+  const e={R,itemsG,items:[],fly:null};corpses.set(c.id,e);setCorpseItems(c.id,c.items||[]);
+  const age=(c.age||0)/1000;
+  if(c.from&&age<c.dur){e.fly={t:age,dur:c.dur,from:c.from,to:rg,vy:c.vy};e.itemsG.visible=false} // still falling: play the fall
 }
 function pickItem(nx,ny){ // the single item (pistol or ID card) you are looking at, within reach
   if(!corpses.size)return null;
@@ -1280,13 +1292,13 @@ function pickItem(nx,ny){ // the single item (pistol or ID card) you are looking
 function loot(it){if(corpses.has(it.cid)&&socket&&socket.connected)socket.emit('loot',{id:it.cid,item:it.iid})}
 function blastCorpse(m){ // the core explosion throws the body (and its items) across the map
   const e=corpses.get(m.id);if(!e)return;
-  e.fly={t:0,dur:1.8,from:m.from,to:m.rg};e.itemsG.visible=false;
+  e.fly={t:0,dur:1.8,from:m.from,to:m.rg,vy:11*1.8};e.itemsG.visible=false;
 }
 function corpseTick(dt){
   for(const e of corpses.values()){
     const f=e.fly;if(!f)continue;
     f.t+=dt;const k=Math.min(1,f.t/f.dur),R=e.R,arc=Math.sin(k*Math.PI);
-    R.h.position.set(f.from[0]+(f.to[0]-f.from[0])*k,f.from[1]+(f.to[1]-f.from[1])*k+arc*7,f.from[2]+(f.to[2]-f.from[2])*k);
+    R.h.position.set(f.from[0]+(f.to[0]-f.from[0])*k,Math.max(f.to[1],f.from[1]+f.vy*f.t-11*f.t*f.t),f.from[2]+(f.to[2]-f.from[2])*k);
     R.h.rotation.set(f.from[3]+(f.to[3]-f.from[3])*k+arc*5,f.from[4]+(f.to[4]-f.from[4])*k,f.from[5]+(f.to[5]-f.from[5])*k+arc*6);
     if(k>=1){
       e.fly=null;R.h.position.set(f.to[0],f.to[1],f.to[2]);R.h.rotation.set(f.to[3],f.to[4],f.to[5]);
