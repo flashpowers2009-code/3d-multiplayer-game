@@ -176,7 +176,7 @@ const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
 
 // The reactor core starts at 0 C and always cools by exactly 1 C per second. Each heater key that is on adds
 // +2 C/s and each cooler key that is on removes 2 C/s, so the net rate is always odd and can never hold steady.
-const newCore = () => ({ temp: 0, cl: [false, false, false, false], ht: [false, false, false, false], by: '', ex: false, melt: false, meltAt: 0, pm: [true, true, true, true] });
+const newCore = () => ({ temp: 0, cl: [false, false, false, false], ht: [false, false, false, false], by: '', ex: false, melt: false, meltAt: 0, pm: [true, true, true, true], lights: true });
 const shards = Array.from({ length: SHARDS }, (_, i) => ({
   id: i, room: 'shard' + i, players: {}, sockets: new Set(), core: newCore(), exTimer: null, evacTimer: null, dirty: false, corpses: [],
 }));
@@ -185,7 +185,7 @@ const bans = new Map();   // account key -> Map of shard id -> time the ban ends
 
 const coreMsg = (sh) => {
   const c = sh.core;
-  return { t: Math.round(c.temp), cl: c.cl, ht: c.ht, by: c.by, pm: c.pm, ex: c.ex, cd: c.melt ? Math.max(0, Math.ceil((c.meltAt - Date.now()) / 1000)) : 0 };
+  return { t: Math.round(c.temp), cl: c.cl, ht: c.ht, by: c.by, pm: c.pm, lt: c.lights, ex: c.ex, cd: c.melt ? Math.max(0, Math.ceil((c.meltAt - Date.now()) / 1000)) : 0 };
 };
 const emitCore = (sh) => io.to(sh.room).emit('core', coreMsg(sh));
 const resetCore = (sh) => {
@@ -466,7 +466,7 @@ io.on('connection', (socket) => {
     const now = Date.now();
     const sh = socket.shard;
     if (!sh || !d || sh.core.ex || sh.core.melt || now - lastPress < 120) return;
-    if (!['cool', 'heat', 'pump'].includes(d.type) || !Number.isInteger(d.i) || d.i < 0 || d.i > 3) return;
+    if (!['cool', 'heat', 'pump', 'lights'].includes(d.type) || !Number.isInteger(d.i) || d.i < 0 || d.i > 3) return;
     lastPress = now;
     const core = sh.core;
     if (d.type === 'pump') {
@@ -475,6 +475,8 @@ io.on('connection', (socket) => {
     } else if (d.type === 'cool') {
       if (!core.pm[d.i]) return; // pump is off: this cooler can't be used
       core.cl[d.i] = !core.cl[d.i];
+    } else if (d.type === 'lights') {
+      core.lights = !core.lights; // the breaker in the power room: sabotage the lights, or switch them back on
     } else {
       core.ht[d.i] = !core.ht[d.i];
     }
