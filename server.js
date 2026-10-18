@@ -211,6 +211,7 @@ function simulate(sh) {
       core.melt = false;
       core.ex = true;
       blastCorpses(sh);
+      killInsideFacility(sh);
       emitCore(sh);
       sh.exTimer = setTimeout(() => { resetCore(sh); emitCore(sh); }, REBUILD_MS);
     }, EVAC_MS);
@@ -229,19 +230,50 @@ function pickShard(key, avoid) {
   return options[Math.floor(Math.random() * options.length)];
 }
 let nextCorpseId = 1, nextItemId = 1;
-function createCorpse(socket, sh) {
+function createCorpse(socket, sh, info) {
   const pl = sh && sh.players[socket.id];
   if (!pl) return;
   let seed = 0; for (const ch of String(socket.id)) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0; // same hash the clients use
-  const rg = pl.rg ? pl.rg.slice(0, 6).concat(1) : [pl.x, 0.22, pl.z, -1.5708, pl.r || 0, 0, 1];
+  const rnd = (n) => ((seed >>> n) % 1000) / 1000;
+  // work out the ragdoll's fall here, so every player sees the same body land in the same place
+  const G = 22, y0 = pl.y + 1.1;
+  let vx, vz, vy;
+  if (info.blast) { // thrown outward by the explosion
+    const dx = pl.x, dz = pl.z + 45, d = Math.hypot(dx, dz) || 1, sp = 12 + rnd(0) * 8;
+    vx = dx / d * sp; vz = dz / d * sp; vy = 9 + rnd(3) * 6;
+  } else { // knocked back along the shot or punch
+    const d = Math.hypot(info.dx, info.dz) || 1, sp = 3 + rnd(0) * 2;
+    vx = info.dx / d * sp; vz = info.dz / d * sp; vy = 2 + rnd(3) * 2;
+  }
+  const dur = (vy + Math.sqrt(vy * vy + 2 * G * (y0 - 0.25))) / G; // time until it hits the ground
+  const clamp = (v) => Math.max(-95, Math.min(95, v));
+  const from = [pl.x, y0, pl.z, 0, pl.r || 0, 0];
+  const rg = [clamp(pl.x + vx * dur), 0.22, clamp(pl.z + vz * dur), ((seed >> 5) % 2 ? 1 : -1) * Math.PI / 2, (pl.r || 0) + ((seed % 628) / 100), ((seed % 13) - 6) / 20, 1];
   // everything they carried drops with them, as separate items: each pistol, and their ID card(s)
   const items = [];
   for (let i = 0; i < socket.guns; i++) items.push({ id: nextItemId++, kind: 'pistol' });
   for (const card of socket.cards) items.push({ id: nextItemId++, kind: 'card', card: { ...card } });
-  const c = { id: nextCorpseId++, rg, c: pl.c, seed, items, until: Date.now() + CORPSE_MS };
+  const c = { id: nextCorpseId++, owner: socket.id, from, rg, vy, dur, c: pl.c, seed, items, born: Date.now(), until: Date.now() + CORPSE_MS };
   sh.corpses.push(c);
   socket.guns = 0; socket.cards = [];
-  io.to(sh.room).emit('corpse', c);
+  io.to(sh.room).emit('corpse', { ...c, age: 0 });
+}
+// a player dies: the body (with all their stuff) appears right away, whether or not their browser is open
+function killOnServer(target, info) {
+  const sh = target.shard;
+  if (!sh || target.dead) return;
+  target.dead = true; target.diedIn = sh.id; target.diedAt = Date.now();
+  createCorpse(target, sh, info);
+  delete sh.players[target.id];
+  io.to(sh.room).emit('playerLeft', target.id); // their living body disappears for everyone
+  target.emit('killed', info.blast ? { blast: true } : { by: info.by, dx: info.dx, dz: info.dz });
+}
+// anyone still inside the facility when it explodes dies, even if they're away from the keyboard
+function killInsideFacility(sh) {
+  for (const sk of [...sh.sockets]) {
+    const p = sh.players[sk.id];
+    if (p && !sk.dead && p.x > -51 && p.x < 31 && Math.abs(p.z + 45) < 23) killOnServer(sk, { blast: true });
+  }
 }
 // the core explosion throws nearby bodies far across the map
 function blastCorpses(sh) {
@@ -284,7 +316,7 @@ function joinShard(socket, sh) {
   socket.join(sh.room);
   socket.emit('shardReset'); // the client forgets the previous world
   socket.emit('currentPlayers', sh.players);
-  socket.emit('corpses', sh.corpses);
+  socket.emit('corpses', sh.corpses.map((c) => ({ ...c, age: Date.now() - c.born })));
   socket.emit('core', coreMsg(sh));
 }
 
@@ -317,7 +349,7 @@ io.on('connection', (socket) => {
   socket.on('playerMovement', (d) => {
     const sh = socket.shard;
     if (!sh || !d || typeof d !== 'object') return;
-    if (d.dd && !socket.dead) { socket.dead = true; socket.diedIn = sh.id; } // stays dead until the client reports 'respawned'
+    if (socket.dead) return; // the dead don't move
     // Name and color always come from the account, never from the client
     sh.players[socket.id] = {
       x: Math.max(-100, Math.min(100, num(d.x))),
@@ -356,11 +388,7 @@ io.on('connection', (socket) => {
     const dead = target.hp <= 0;
     target.emit('hurt', { hp: Math.max(0, target.hp) });
     socket.emit('hitmark', { kill: dead });
-    if (dead) {
-      target.dead = true;
-      target.diedIn = target.shard.id;
-      target.emit('killed', { by: username, dx: hit.dx, dz: hit.dz });
-    }
+    if (dead) killOnServer(target, { by: username, dx: hit.dx, dz: hit.dz });
   };
   socket.on('shoot', (d) => {
     const now = Date.now();
@@ -413,9 +441,7 @@ io.on('connection', (socket) => {
     io.to(sh.room).emit('corpseUpdate', { id: c.id, items: c.items });
   });
   socket.on('respawned', () => {
-    const wasDead = socket.dead;
-    const old = socket.shard;
-    if (wasDead && old) createCorpse(socket, old); // the body stays where it fell, with whatever it carried
+    if (!socket.dead || Date.now() - (socket.diedAt || 0) < 5500) return; // you must wait out the 6 seconds first
     socket.guns = 0; // a new life starts without a pistol, with a fresh ID card
     socket.cards = [{ n: username, t: socket.account.team, c: color }];
     socket.hp = 100; socket.dead = false; socket.protUntil = Date.now() + GUN.SPAWN_PROTECTION;
@@ -472,7 +498,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    if (socket.dead && socket.shard) createCorpse(socket, socket.shard); // leaving while dead still leaves a body
     leaveShard(socket);
     if (online.get(key) === socket) online.delete(key);
   });
