@@ -66,6 +66,14 @@ canvas{display:block;width:100%;height:100%}
 </style>
 </head>
 <body>
+<script>
+// if anything goes wrong while the game starts, show the error on screen
+addEventListener('error',function(e){
+  var d=document.getElementById('errbox');
+  if(!d){d=document.createElement('div');d.id='errbox';d.style.cssText='position:fixed;left:8px;right:8px;top:70px;z-index:99;background:rgba(127,29,29,.95);color:#fff;font:12px/1.4 monospace;padding:10px;border-radius:8px;white-space:pre-wrap;max-height:50vh;overflow:auto;user-select:text';document.body.appendChild(d)}
+  d.textContent+=(e.message||('Could not load '+((e.target&&(e.target.src||e.target.href))||'a file')))+(e.lineno?' (line '+e.lineno+')':'')+'\n';
+},true);
+</script>
 <div id="hint">Click the screen to capture mouse · WASD / arrows to move · Space to jump · C shirt color · Esc to release</div>
 <div id="count" style="position:fixed;top:calc(34px + env(safe-area-inset-top,0px));left:0;right:0;text-align:center;color:#fff;font-size:12px;text-shadow:0 1px 3px rgba(0,0,0,.5);pointer-events:none">1 player online</div>
 <div id="menu"><div id="panel">
@@ -107,10 +115,16 @@ canvas{display:block;width:100%;height:100%}
 <div id="joy"><div id="knob"></div></div>
 <div id="jump">Jump</div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>if(!window.THREE)document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>')</script>
 <script src="/socket.io/socket.io.js"></script>
 <script>
 (function(){
-const renderer=new THREE.WebGLRenderer({antialias:true});
+let renderer;
+try{renderer=new THREE.WebGLRenderer({antialias:true})}
+catch(e1){
+  try{renderer=new THREE.WebGLRenderer({antialias:false,powerPreference:'low-power'})}
+  catch(e2){document.body.insertAdjacentHTML('beforeend','<div style="position:fixed;left:8px;right:8px;top:70px;z-index:99;background:rgba(127,29,29,.95);color:#fff;font:14px system-ui;padding:12px;border-radius:8px">This browser could not start 3D graphics (WebGL). Try another browser, or turn on hardware acceleration.</div>');throw e2}
+}
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.setSize(innerWidth,innerHeight);
 renderer.shadowMap.enabled=true;
@@ -563,11 +577,11 @@ function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.
     const lens=new THREE.Mesh(new THREE.CylinderGeometry(.06,.06,.1,12),new THREE.MeshLambertMaterial({color:0x0b1220}));lens.rotation.x=Math.PI/2;lens.position.z=.24;cg.add(lens);
     const led=new THREE.Mesh(new THREE.SphereGeometry(.03,8,6),basicM(0xef4444));led.position.set(.08,.1,.1);cg.add(led);camLeds.push(led);
     facGroup.add(cg);cg.lookAt(FX+tx,ty,FZ+tz);
-    const rt=new THREE.WebGLRenderTarget(320,180,{minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
+    let rt=null;try{rt=new THREE.WebGLRenderTarget(320,180,{minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter})}catch(_){}
     const fc=new THREE.PerspectiveCamera(70,16/9,.1,90);fc.position.set(FX+cx,cy,FZ+cz);fc.lookAt(FX+tx,ty,FZ+tz);
-    facFeeds.push({cam:fc,rt});
+    if(rt)facFeeds.push({cam:fc,rt});
     const col=i%5,row=Math.floor(i/5),mz=11.5+col*2.1,my=row?3.15:1.75; // 5 x 2 monitors
-    const mon=new THREE.Mesh(new THREE.PlaneGeometry(1.9,1.07),new THREE.MeshBasicMaterial({map:rt.texture}));
+    const mon=new THREE.Mesh(new THREE.PlaneGeometry(1.9,1.07),new THREE.MeshBasicMaterial(rt?{map:rt.texture}:{color:0x0b1220}));
     mon.position.set(FX-49.48,my,FZ+mz);mon.rotation.y=Math.PI/2;facGroup.add(mon);
     sign(name,1.5,-49.47,my+.7,mz,Math.PI/2,'#7dd3fc');
   });
@@ -735,7 +749,7 @@ addEventListener('resize',()=>{
 
 // Multiplayer (Socket.io, served by the same Node server)
 const remotes=new Map();let socket=null,sendAcc=0;const countEl=document.getElementById('count');
-const BUILD=16;
+const BUILD=17;
 function updateCount(){countEl.textContent=(remotes.size+1)+' player'+(remotes.size?'s':'')+' online \u00b7 build '+BUILD}
 updateCount();
 function sendPresence(dt){
@@ -1431,8 +1445,10 @@ function feedTick(){ // draw the security camera pictures (only while someone is
   if(!(px>FX-52&&px<FX-27&&pz>FZ+8&&pz<FZ+24))return;
   const f=facFeeds[feedIdx++%facFeeds.length],gv=gun.visible,fv=fist.visible;
   gun.visible=false;fist.visible=false; // don't show our own hands inside the camera pictures
-  const prev=renderer.getRenderTarget();renderer.shadowMap.autoUpdate=false; // reuse the shadows already drawn this frame
-  renderer.setRenderTarget(f.rt);renderer.render(scene,f.cam);renderer.setRenderTarget(prev);renderer.shadowMap.autoUpdate=true;
+  try{
+    const prev=renderer.getRenderTarget();renderer.shadowMap.autoUpdate=false; // reuse the shadows already drawn this frame
+    renderer.setRenderTarget(f.rt);renderer.render(scene,f.cam);renderer.setRenderTarget(prev);
+  }catch(_){facFeeds.length=0}finally{renderer.shadowMap.autoUpdate=true;renderer.setRenderTarget(null)}
   gun.visible=gv;fist.visible=fv;
 }
 function weaponTick(dt){
@@ -1574,37 +1590,4 @@ function tick(){
   for(const o of obstacles){
     const dx=player.position.x-o.x,dz=player.position.z-o.z,d=Math.hypot(dx,dz),m=o.r+.35;
     if(d<m&&d>0.001&&player.position.y<(o.h||1.2)){player.position.x=o.x+dx/d*m;player.position.z=o.z+dz/d*m}
-  }
-  for(const b of boxes){
-    if(player.position.y>b.h)continue;
-    if(b.obb){resolveObb(b);continue}
-    const px=player.position.x,pz=player.position.z,R=.35;
-    const cx=Math.max(b.x0,Math.min(px,b.x1)),cz=Math.max(b.z0,Math.min(pz,b.z1));
-    const dx=px-cx,dz=pz-cz,d=Math.hypot(dx,dz);
-    if(d<R){
-      if(d>1e-4){player.position.x=cx+dx/d*R;player.position.z=cz+dz/d*R}
-      else{
-        const l=px-b.x0,r=b.x1-px,t=pz-b.z0,bt=b.z1-pz,m=Math.min(l,r,t,bt);
-        if(m===l)player.position.x=b.x0-R;else if(m===r)player.position.x=b.x1+R;
-        else if(m===t)player.position.z=b.z0-R;else player.position.z=b.z1+R;
-      }
-    }
-  }
-  player.position.x=Math.max(-97,Math.min(97,player.position.x));
-  player.position.z=Math.max(-97,Math.min(97,player.position.z));
-  // walk animation
-  if(moving&&onGround)walkT+=dt*10;
-  animChar(player,walkT,moving,!onGround);
-  sendPresence(dt,moving);
-  facilityTick(performance.now()/1000);
-  explosionTick(dt);
-  weaponTick(dt);
-  updateRemotes(dt);
-  // camera
-  const tx=player.position.x,tz=player.position.z;
-  if(started){
-    // first-person: camera at eye height, looking where you aim
-    camera.position.set(tx,player.position.y+1.85,tz);
-    camera.rotation.set(pitch,yaw,0);
-    if(dead&&localRag)ragdollCam();
-    const sk=shakeAmt();if(sk){camera.position.x+=(Math.random()-.5)*sk;camera.position.y+=
+ 
