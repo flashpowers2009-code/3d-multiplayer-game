@@ -116,6 +116,8 @@ addEventListener('error',function(e){
 <div id="jump">Jump</div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>if(!window.THREE)document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>')</script>
+<script>if(!window.THREE)document.write('<script src="https://unpkg.com/three@0.128.0/build/three.min.js"><\/script>')</script>
+<script>if(!window.THREE){var eb=document.createElement('div');eb.style.cssText='position:fixed;left:8px;right:8px;top:70px;z-index:99;background:rgba(127,29,29,.95);color:#fff;font:14px system-ui;padding:12px;border-radius:8px';eb.textContent='The 3D library could not be downloaded (your network may be blocking it). Try Wi-Fi or another browser.';document.body.appendChild(eb)}</script>
 <script src="/socket.io/socket.io.js"></script>
 <script>
 (function(){
@@ -749,7 +751,7 @@ addEventListener('resize',()=>{
 
 // Multiplayer (Socket.io, served by the same Node server)
 const remotes=new Map();let socket=null,sendAcc=0;const countEl=document.getElementById('count');
-const BUILD=17;
+const BUILD=18;
 function updateCount(){countEl.textContent=(remotes.size+1)+' player'+(remotes.size?'s':'')+' online \u00b7 build '+BUILD}
 updateCount();
 function sendPresence(dt){
@@ -1580,14 +1582,4 @@ function tick(){
     faceAngle+=angDiff(faceAngle,target)*Math.min(1,dt*12);
     player.rotation.y=faceAngle;
   }
-  if(started)player.rotation.y=yaw+Math.PI;
-  // jump & gravity
-  if((keys.Space||jumpQueued)&&onGround&&!dead){vel.y=JUMP;onGround=false}
-  jumpQueued=false;
-  vel.y+=GRAV*dt;player.position.y+=vel.y*dt;
-  if(player.position.y<=0){player.position.y=0;vel.y=0;onGround=true}
-  // collisions & bounds
-  for(const o of obstacles){
-    const dx=player.position.x-o.x,dz=player.position.z-o.z,d=Math.hypot(dx,dz),m=o.r+.35;
-    if(d<m&&d>0.001&&player.position.y<(o.h||1.2)){player.position.x=o.x+dx/d*m;player.position.z=o.z+dz/d*m}
- 
+  if(started)
