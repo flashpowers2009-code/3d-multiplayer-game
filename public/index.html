@@ -704,7 +704,7 @@ const MOUSE_HINT='Click the screen to capture mouse · WASD / arrows to move · 
 const LOCKED_HINT='WASD / arrows to move · Space to jump · C shirt color · Esc to release mouse';
 const locked=()=>document.pointerLockElement===cv;
 document.addEventListener('pointerlockchange',()=>{hintEl.textContent=locked()?LOCKED_HINT:MOUSE_HINT});
-function look(dx,dy){yaw+=dx*0.0025;pitch=Math.max(-1.5,Math.min(1.5,pitch-dy*0.0025))}
+function look(dx,dy){yaw-=dx*0.0025;pitch=Math.max(-1.5,Math.min(1.5,pitch-dy*0.0025))}
 cv.addEventListener('pointerdown',e=>{
   if(!started||paused)return;
   if(e.pointerType==='mouse'&&cv.requestPointerLock){
@@ -717,7 +717,7 @@ cv.addEventListener('pointerdown',e=>{
 cv.addEventListener('pointermove',e=>{
   if(locked()){look(e.movementX,e.movementY);return}
   const p=looks.get(e.pointerId);if(!p)return;
-  yaw+=(e.clientX-p.x)*0.006;
+  yaw-=(e.clientX-p.x)*0.006;
   pitch=Math.max(-1.5,Math.min(1.5,pitch-(e.clientY-p.y)*0.005));
   p.x=e.clientX;p.y=e.clientY;
 });
@@ -1573,7 +1573,7 @@ function tick(){
   const dt=Math.min(clock.getDelta(),0.05);
   // input
 
-  const forward = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - joyV.y;
+  const forward = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + joyV.y;
   const side = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + joyV.x;
   let moving = false;
   if (started && !paused && !dead) {
