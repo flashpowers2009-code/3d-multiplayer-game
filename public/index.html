@@ -7,8 +7,8 @@
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#9ad0ec;touch-action:none;user-select:none;-webkit-user-select:none;font-family:system-ui,sans-serif}
 canvas{display:block;width:100%;height:100%}
-#joy{position:fixed;left:18px;bottom:calc(24px + env(safe-area-inset-bottom,0px));width:124px;height:124px;border-radius:50%;background:rgba(15,23,42,.22);border:2px solid rgba(255,255,255,.58);display:none;touch-action:none;z-index:8;box-sizing:border-box}
-#knob{position:absolute;left:35px;top:35px;width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.78);border:2px solid rgba(15,23,42,.22);box-sizing:border-box;pointer-events:none;will-change:transform}
+#joy{position:fixed;left:max(18px,env(safe-area-inset-left,0px));bottom:calc(28px + env(safe-area-inset-bottom,0px));width:150px;height:150px;border-radius:50%;background:radial-gradient(circle,rgba(15,23,42,.34),rgba(15,23,42,.18));border:2px solid rgba(255,255,255,.72);box-shadow:0 4px 18px rgba(0,0,0,.18),inset 0 0 0 8px rgba(255,255,255,.05);display:none;touch-action:none;z-index:8;box-sizing:border-box}
+#knob{position:absolute;left:50%;top:50%;margin:-29px 0 0 -29px;width:58px;height:58px;border-radius:50%;background:linear-gradient(145deg,rgba(255,255,255,.96),rgba(203,213,225,.82));border:2px solid rgba(15,23,42,.3);box-shadow:0 3px 9px rgba(0,0,0,.25);box-sizing:border-box;pointer-events:none;will-change:transform}
 #jump{position:fixed;right:28px;bottom:calc(40px + env(safe-area-inset-bottom,0px));width:76px;height:76px;border-radius:50%;background:rgba(255,255,255,.3);border:2px solid rgba(255,255,255,.6);color:#fff;font-weight:600;display:none;align-items:center;justify-content:center;touch-action:none}
 #hint{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:0;right:0;text-align:center;color:#fff;font-size:13px;text-shadow:0 1px 3px rgba(0,0,0,.5);pointer-events:none}
 #menu{position:fixed;inset:0;z-index:10;display:flex;align-items:flex-end;justify-content:center;padding:16px calc(16px + env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) calc(16px + env(safe-area-inset-left,0px));box-sizing:border-box;pointer-events:none}
@@ -705,8 +705,8 @@ const LOCKED_HINT='WASD / arrows to move · Space to jump · C shirt color · Es
 const locked=()=>document.pointerLockElement===cv;
 document.addEventListener('pointerlockchange',()=>{hintEl.textContent=locked()?LOCKED_HINT:MOUSE_HINT});
 // Lower, consistent look sensitivity; clamp pitch before the camera can flip.
-const MOUSE_LOOK=0.0018, TOUCH_LOOK_X=0.0032, TOUCH_LOOK_Y=0.0028;
-function look(dx,dy){yaw-=dx*MOUSE_LOOK;pitch=Math.max(-1.35,Math.min(1.35,pitch-dy*MOUSE_LOOK))}
+const MOUSE_LOOK=0.0022, TOUCH_LOOK_X=0.0038, TOUCH_LOOK_Y=0.0034;
+function look(dx,dy){yaw-=dx*MOUSE_LOOK;pitch=Math.max(-1.25,Math.min(1.25,pitch-dy*MOUSE_LOOK))}
 cv.addEventListener('pointerdown',e=>{
   if(!started||paused)return;
   if(e.pointerType==='mouse'&&cv.requestPointerLock){
@@ -714,6 +714,8 @@ cv.addEventListener('pointerdown',e=>{
     else{try{const r=cv.requestPointerLock();if(r&&r.catch)r.catch(()=>{})}catch(_){}}
     return;
   }
+  // On phones, reserve the left side for movement; the right side is for looking.
+  if(e.pointerType!=='mouse'&&e.clientX<innerWidth*0.36)return;
   cv.setPointerCapture(e.pointerId);looks.set(e.pointerId,{x:e.clientX,y:e.clientY,sx:e.clientX,sy:e.clientY,t:performance.now()});
 });
 cv.addEventListener('pointermove',e=>{
@@ -721,7 +723,7 @@ cv.addEventListener('pointermove',e=>{
   const p=looks.get(e.pointerId);if(!p)return;
   // Touch drag is deliberately slower than raw finger movement to avoid wild spins.
   yaw-=(e.clientX-p.x)*TOUCH_LOOK_X;
-  pitch=Math.max(-1.35,Math.min(1.35,pitch-(e.clientY-p.y)*TOUCH_LOOK_Y));
+  pitch=Math.max(-1.25,Math.min(1.25,pitch-(e.clientY-p.y)*TOUCH_LOOK_Y));
   p.x=e.clientX;p.y=e.clientY;
 });
 const endLook=e=>looks.delete(e.pointerId);
@@ -734,31 +736,30 @@ cv.addEventListener('pointerup',e=>{
 cv.addEventListener('pointercancel',endLook);
 cv.addEventListener('wheel',e=>{if(started&&!dead){const L=itemList();let i=L.findIndex(a=>a[0]===slot&&a[1]===selK);i=(i+(e.deltaY>0?1:L.length-1))%L.length;selectItem(L[i][0],L[i][1])}e.preventDefault()},{passive:false});
 
-// Touch controls
+// Touch controls: a proper floating-range stick with a dead zone and full diagonal range.
 const joy=document.getElementById('joy'),knob=document.getElementById('knob'),jumpB=document.getElementById('jump');
 if('ontouchstart' in window||navigator.maxTouchPoints>0){
   joy.style.display='block';jumpB.style.display='flex';
-  document.getElementById('hint').textContent='Left stick to move · drag to look · Jump button';
+  document.getElementById('hint').textContent='Left joystick to move · drag right side to look · Jump';
   let jid=null;
   const upd=e=>{
     const r=joy.getBoundingClientRect();
     let dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2);
-    const max=35, m=Math.hypot(dx,dy);
-    if(m>max){dx*=max/m;dy*=max/m}
-    // Small dead zone prevents drift; soften the edge for precise walking.
-    const rawX=dx/max, rawY=dy/max, mag=Math.hypot(rawX,rawY);
-    const deadZone=.10, strength=mag<=deadZone?0:Math.min(1,(mag-deadZone)/(1-deadZone));
+    const knobRadius=29, max=Math.max(24,r.width/2-knobRadius-5),m=Math.hypot(dx,dy);
+    if(m>max){dx=dx/m*max;dy=dy/m*max}
+    const rawX=dx/max,rawY=dy/max,mag=Math.min(1,Math.hypot(rawX,rawY));
+    const deadZone=.12,strength=mag<=deadZone?0:(mag-deadZone)/(1-deadZone);
     const scale=mag>0?strength/mag:0;
     knob.style.transform=`translate(${dx}px,${dy}px)`;
     joyV.x=rawX*scale;
-    // Screen Y is positive downward: pushing up must move the player forward.
+    // joyV.y is screen-space down-positive; movement code subtracts it for forward.
     joyV.y=rawY*scale;
   };
   joy.addEventListener('pointerdown',e=>{e.preventDefault();if(jid!==null)return;jid=e.pointerId;joy.setPointerCapture(jid);upd(e)});
   joy.addEventListener('pointermove',e=>{if(e.pointerId===jid){e.preventDefault();upd(e)}});
-  const rel=e=>{if(e.pointerId!==jid)return;jid=null;joyV.x=joyV.y=0;knob.style.transform=''};
-  joy.addEventListener('pointerup',rel);joy.addEventListener('pointercancel',rel);
-  jumpB.addEventListener('pointerdown',()=>jumpQueued=true);
+  const rel=e=>{if(e.pointerId!==jid)return;jid=null;joyV.x=joyV.y=0;knob.style.transform='translate(0px,0px)'};
+  joy.addEventListener('pointerup',rel);joy.addEventListener('pointercancel',rel);joy.addEventListener('lostpointercapture',rel);
+  jumpB.addEventListener('pointerdown',e=>{e.preventDefault();jumpQueued=true});
 }
 
 addEventListener('resize',()=>{
