@@ -692,7 +692,7 @@ addEventListener('keydown',e=>{
   keys[e.code]=true;if(e.code==='Space')e.preventDefault();
 });
 addEventListener('keyup',e=>keys[e.code]=false);
-let yaw=0,pitch=0,dist=5;const menuPitch=0.35;
+let yaw=0,pitch=0,dist=0;const menuPitch=0.35;
 const joyV={x:0,y:0};let jumpQueued=false;
 const vel=new THREE.Vector3();let onGround=true,faceAngle=0,walkT=0;
 
@@ -1572,6 +1572,7 @@ function angDiff(a,b){let d=b-a;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+
 function tick(){
   const dt=Math.min(clock.getDelta(),0.05);
   // input
+
   const forward = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - joyV.y;
   const side = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + joyV.x;
   let moving = false;
@@ -1656,7 +1657,15 @@ function tick(){
   } catch (e) { reportError(e); }
   requestAnimationFrame(tick);
 }
-// Respawn is handled by the respawn() function registered above.
+respawnBtn.addEventListener('click', () => {
+  if (!dead || performance.now() < deadUntil) return;
+  if (socket && socket.connected) socket.emit('respawned');
+  if (localRag) { removeRagdoll(localRag); localRag = null; }
+  dead = false; deadEl.style.opacity = 0;
+  setTimeout(() => { deadEl.style.display = 'none'; deadEl.style.opacity = ''; }, 250);
+  player.position.set(0, 0, 0); vel.set(0,0,0); hp = 100; ammo = GUN_MAG;
+  updateHud(); updateSlots();
+});
 initExplosion();
 camera.position.set(0, 5, 10);
 camera.lookAt(0, 1, 0);
