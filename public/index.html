@@ -68,6 +68,11 @@ canvas{display:block;width:100%;height:100%}
 <body>
 <script>
 // if anything goes wrong while the game starts, show the error on screen
+window.__showErr=function(msg){
+  var d=document.getElementById('errbox');
+  if(!d){d=document.createElement('div');d.id='errbox';d.style.cssText='position:fixed;left:8px;right:8px;top:70px;z-index:99;background:rgba(127,29,29,.95);color:#fff;font:12px/1.4 monospace;padding:10px;border-radius:8px;white-space:pre-wrap;max-height:50vh;overflow:auto;user-select:text';document.body.appendChild(d)}
+  d.textContent+=msg+'\n';
+};
 addEventListener('error',function(e){
   var d=document.getElementById('errbox');
   if(!d){d=document.createElement('div');d.id='errbox';d.style.cssText='position:fixed;left:8px;right:8px;top:70px;z-index:99;background:rgba(127,29,29,.95);color:#fff;font:12px/1.4 monospace;padding:10px;border-radius:8px;white-space:pre-wrap;max-height:50vh;overflow:auto;user-select:text';document.body.appendChild(d)}
@@ -120,6 +125,8 @@ addEventListener('error',function(e){
 <script>if(!window.THREE){var eb=document.createElement('div');eb.style.cssText='position:fixed;left:8px;right:8px;top:70px;z-index:99;background:rgba(127,29,29,.95);color:#fff;font:14px system-ui;padding:12px;border-radius:8px';eb.textContent='The 3D library could not be downloaded (your network may be blocking it). Try Wi-Fi or another browser.';document.body.appendChild(eb)}</script>
 <script src="/socket.io/socket.io.js"></script>
 <script>
+function reportError(e){try{window.__showErr&&window.__showErr(String((e&&e.stack)||e).split('\n').slice(0,3).join(' | '))}catch(_){}}
+
 (function(){
 let renderer;
 try{renderer=new THREE.WebGLRenderer({antialias:true})}
@@ -224,7 +231,7 @@ function drawCodeScreen(cv,compact){
   x.fillText(coreState.cd>0?'EXPLOSION IMMINENT':'Use the COOL / HEAT keys below',w/2,h*.92,w-30);
 }
 function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.tex.needsUpdate=true}}
-(function(){
+try{(function(){
   const T=0.6,WC=0xb8bec7;
   const B=(w,h,d,c,lx,y,lz,col)=>fBox(w,h,d,c,FX+lx,y,FZ+lz,col);
   const rnd2=seed=>{let q=seed;return()=>(q=(q*16807)%2147483647)/2147483647};
@@ -625,7 +632,7 @@ function drawAllReadouts(){for(const r of facReadouts){r.draw(r.cv,r.compact);r.
   const mast=cyl(.08,.08,7,0x9ca3af,24,8.9,-18,0);
   const tip=new THREE.Mesh(new THREE.SphereGeometry(.16,10,8),basicM(0xef4444));tip.position.set(FX+24,12.5,FZ-18);facGroup.add(tip);
   facAnims.push(t=>{tip.visible=Math.floor(t*1.5)%2===0});
-})();
+})()}catch(e){reportError(e)}
 function facilityTick(t){
   aimCheck();
   updateEvac();
@@ -751,7 +758,7 @@ addEventListener('resize',()=>{
 
 // Multiplayer (Socket.io, served by the same Node server)
 const remotes=new Map();let socket=null,sendAcc=0;const countEl=document.getElementById('count');
-const BUILD=18;
+const BUILD=19;
 function updateCount(){countEl.textContent=(remotes.size+1)+' player'+(remotes.size?'s':'')+' online \u00b7 build '+BUILD}
 updateCount();
 function sendPresence(dt){
@@ -1144,7 +1151,7 @@ function updateEvac(){
   if(cd!==lastCd){lastCd=cd;beep(cd<=10?1200:800)} // siren only; no on-screen banner
 }
 function shakeAmt(){return exFx.active?Math.max(0,1-(performance.now()/1000-exFx.t0)/3.5)*.4:0}
-initExplosion();
+try{initExplosion()}catch(e){reportError(e)}
 
 // ===== Pistols (PvP) =====
 const GUN_MAG=12,GUN_RELOAD_MS=1400,GUN_COOLDOWN=250;
@@ -1454,7 +1461,7 @@ function feedTick(){ // draw the security camera pictures (only while someone is
   gun.visible=gv;fist.visible=fv;
 }
 function weaponTick(dt){
-  corpseTick(dt);lightTick(dt);
+  try{corpseTick(dt);lightTick(dt)}catch(e){reportError(e)}
   const show=started&&!dead&&!paused;
   gun.visible=show&&slot===0;fist.visible=show&&slot===1;
   if(gunRec>0)gunRec=Math.max(0,gunRec-dt*7);
@@ -1565,21 +1572,4 @@ function angDiff(a,b){let d=b-a;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+
 function tick(){
   const dt=Math.min(clock.getDelta(),0.05);
   // input
-  const act=started&&!dead;let ix=act?joyV.x:0,iz=act?joyV.y:0;
-  if(keys.KeyW||keys.ArrowUp)iz+=1;
-  if(keys.KeyS||keys.ArrowDown)iz-=1;
-  if(keys.KeyD||keys.ArrowRight)ix+=1;
-  if(keys.KeyA||keys.ArrowLeft)ix-=1;
-  const il=Math.hypot(ix,iz);if(il>1){ix/=il;iz/=il}
-  const fx=-Math.sin(yaw),fz=-Math.cos(yaw),rx=Math.cos(yaw),rz=-Math.sin(yaw);
-  const mx=fx*iz+rx*ix,mz=fz*iz+rz*ix;
-  const moving=Math.hypot(mx,mz)>0.05;
-
-  player.position.x+=mx*SPEED*dt;
-  player.position.z+=mz*SPEED*dt;
-  if(moving){
-    const target=Math.atan2(mx,mz);
-    faceAngle+=angDiff(faceAngle,target)*Math.min(1,dt*12);
-    player.rotation.y=faceAngle;
-  }
-  if(started)
+  const 
