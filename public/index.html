@@ -704,7 +704,7 @@ const MOUSE_HINT='Click the screen to capture mouse · WASD / arrows to move · 
 const LOCKED_HINT='WASD / arrows to move · Space to jump · C shirt color · Esc to release mouse';
 const locked=()=>document.pointerLockElement===cv;
 document.addEventListener('pointerlockchange',()=>{hintEl.textContent=locked()?LOCKED_HINT:MOUSE_HINT});
-function look(dx,dy){yaw-=dx*0.0025;pitch=Math.max(-1.5,Math.min(1.5,pitch-dy*0.0025))}
+function look(dx,dy){yaw+=dx*0.0025;pitch=Math.max(-1.5,Math.min(1.5,pitch-dy*0.0025))}
 cv.addEventListener('pointerdown',e=>{
   if(!started||paused)return;
   if(e.pointerType==='mouse'&&cv.requestPointerLock){
@@ -717,7 +717,7 @@ cv.addEventListener('pointerdown',e=>{
 cv.addEventListener('pointermove',e=>{
   if(locked()){look(e.movementX,e.movementY);return}
   const p=looks.get(e.pointerId);if(!p)return;
-  yaw-=(e.clientX-p.x)*0.006;
+  yaw+=(e.clientX-p.x)*0.006;
   pitch=Math.max(-1.5,Math.min(1.5,pitch-(e.clientY-p.y)*0.005));
   p.x=e.clientX;p.y=e.clientY;
 });
@@ -1625,8 +1625,8 @@ function tick(){
     camera.position.set(target.x, Math.max(.15,target.y), target.z);
     camera.lookAt(player.position.x, player.position.y + 1.45, player.position.z);
     camera.rotation.order = 'YXZ';
-    camera.rotation.y = yaw + Math.PI;
-    camera.rotation.x = -pitch;
+    camera.rotation.y = yaw;
+    camera.rotation.x = pitch;
     const shake = shakeAmt();
     if (shake > 0) { camera.position.x += (Math.random()-.5)*shake; camera.position.y += (Math.random()-.5)*shake; }
   } else if (!started) {
