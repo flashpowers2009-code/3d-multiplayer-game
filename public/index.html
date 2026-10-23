@@ -68,7 +68,9 @@ canvas{display:block;width:100%;height:100%}
 <body>
 <script>
 // if anything goes wrong while the game starts, show the error on screen
+window.__errSeen={};
 window.__showErr=function(msg){
+  if(window.__errSeen[msg])return;window.__errSeen[msg]=1;
   var d=document.getElementById('errbox');
   if(!d){d=document.createElement('div');d.id='errbox';d.style.cssText='position:fixed;left:8px;right:8px;top:70px;z-index:99;background:rgba(127,29,29,.95);color:#fff;font:12px/1.4 monospace;padding:10px;border-radius:8px;white-space:pre-wrap;max-height:50vh;overflow:auto;user-select:text';document.body.appendChild(d)}
   d.textContent+=msg+'\n';
@@ -692,7 +694,7 @@ addEventListener('keydown',e=>{
   keys[e.code]=true;if(e.code==='Space')e.preventDefault();
 });
 addEventListener('keyup',e=>keys[e.code]=false);
-let yaw=0,pitch=0,dist=0;const menuPitch=0.35;
+let yaw=0,pitch=0,dist=5;const menuPitch=0.35;
 const joyV={x:0,y:0};let jumpQueued=false;
 const vel=new THREE.Vector3();let onGround=true,faceAngle=0,walkT=0;
 
@@ -758,7 +760,7 @@ addEventListener('resize',()=>{
 
 // Multiplayer (Socket.io, served by the same Node server)
 const remotes=new Map();let socket=null,sendAcc=0;const countEl=document.getElementById('count');
-const BUILD=19;
+const BUILD=20;
 function updateCount(){countEl.textContent=(remotes.size+1)+' player'+(remotes.size?'s':'')+' online \u00b7 build '+BUILD}
 updateCount();
 function sendPresence(dt){
@@ -1569,108 +1571,3 @@ const SPEED=6,GRAV=-26,JUMP=9;
 const clock=new THREE.Clock();
 function angDiff(a,b){let d=b-a;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+=2*Math.PI;return d}
 
-function tick(){
-  const dt=Math.min(clock.getDelta(),0.05);
-  // input
-
-  const forward = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + joyV.y;
-  const side = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + joyV.x;
-  let moving = false;
-  if (started && !paused && !dead) {
-    const len = Math.hypot(forward, side);
-    if (len > 0.05) {
-      moving = true;
-      const f = forward / Math.max(1, len), s = side / Math.max(1, len);
-      const dx = (-Math.sin(yaw) * f + Math.cos(yaw) * s) * SPEED * dt;
-      const dz = (-Math.cos(yaw) * f - Math.sin(yaw) * s) * SPEED * dt;
-      player.position.x += dx;
-      player.position.z += dz;
-      for (const b of boxes) {
-        const inside = player.position.x > b.x0 - .35 && player.position.x < b.x1 + .35 &&
-                       player.position.z > b.z0 - .35 && player.position.z < b.z1 + .35;
-        if (inside) {
-          player.position.x -= dx;
-          player.position.z -= dz;
-          break;
-        }
-      }
-      for (const b of obstacles) {
-        const ox = player.position.x - b.x, oz = player.position.z - b.z, d = Math.hypot(ox, oz);
-        const minD = .35 + b.r;
-        if (d < minD && d > 0.001) {
-          player.position.x = b.x + ox / d * minD;
-          player.position.z = b.z + oz / d * minD;
-        }
-      }
-      player.rotation.y = Math.atan2(-Math.sin(yaw) * f + Math.cos(yaw) * s,
-                                    -Math.cos(yaw) * f - Math.sin(yaw) * s);
-      walkT += dt * 9;
-    }
-    if ((keys.Space || jumpQueued) && onGround) { vel.y = JUMP; onGround = false; }
-    jumpQueued = false;
-    if (!onGround) {
-      vel.y += GRAV * dt;
-      player.position.y += vel.y * dt;
-      if (player.position.y <= 0) { player.position.y = 0; vel.y = 0; onGround = true; }
-    }
-    if (insideFacility() && exFx.active && performance.now()/1000-exFx.t0 > 3.5) throwOut();
-    animChar(player, walkT, moving, !onGround);
-    player.visible = false;
-    const cp = Math.cos(pitch);
-    const target = new THREE.Vector3(
-      player.position.x + Math.sin(yaw) * cp * dist,
-      player.position.y + 1.55 + Math.sin(pitch) * dist,
-      player.position.z + Math.cos(yaw) * cp * dist
-    );
-    camera.position.set(target.x, Math.max(.15,target.y), target.z);
-    camera.lookAt(player.position.x, player.position.y + 1.45, player.position.z);
-    camera.rotation.order = 'YXZ';
-    camera.rotation.y = yaw;
-    camera.rotation.x = pitch;
-    const shake = shakeAmt();
-    if (shake > 0) { camera.position.x += (Math.random()-.5)*shake; camera.position.y += (Math.random()-.5)*shake; }
-  } else if (!started) {
-    const t = performance.now() * .00015;
-    camera.position.set(Math.sin(t)*10, 7, Math.cos(t)*10);
-    camera.lookAt(0, 1, -20);
-  } else if (dead && localRag) {
-    ragdollCam();
-  }
-  try {
-    updateRemotes(dt);
-    ragdollTick(dt);
-    explosionTick(dt);
-    facilityTick(performance.now()/1000);
-    aimCheck();
-    weaponTick(dt);
-    feedTick();
-    sendPresence(dt);
-    if (dead) {
-      const left = Math.max(0, Math.ceil((deadUntil-performance.now())/1000));
-      deadSec.textContent = left;
-      if (left <= 0) {
-        deadWait.style.display = 'none'; deadReady.style.display = 'block';
-        respawnBtn.style.display = 'block';
-      }
-    }
-    renderer.render(scene, camera);
-  } catch (e) { reportError(e); }
-  requestAnimationFrame(tick);
-}
-respawnBtn.addEventListener('click', () => {
-  if (!dead || performance.now() < deadUntil) return;
-  if (socket && socket.connected) socket.emit('respawned');
-  if (localRag) { removeRagdoll(localRag); localRag = null; }
-  dead = false; deadEl.style.opacity = 0;
-  setTimeout(() => { deadEl.style.display = 'none'; deadEl.style.opacity = ''; }, 250);
-  player.position.set(0, 0, 0); vel.set(0,0,0); hp = 100; ammo = GUN_MAG;
-  updateHud(); updateSlots();
-});
-initExplosion();
-camera.position.set(0, 5, 10);
-camera.lookAt(0, 1, 0);
-requestAnimationFrame(tick);
-})();
-</script>
-</body>
-</html>
